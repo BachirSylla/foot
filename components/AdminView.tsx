@@ -19,6 +19,19 @@ export function AdminView() {
 
   const enough = availablePlayers.length >= 4;
   const hasResult = !!result && match.status !== "open";
+  const published = match.status === "published";
+
+  // Rouvrir le tirage retire la composition publiée : geste volontaire, jamais
+  // un clic distrait — c'est ce qui rend la promesse de verrouillage crédible.
+  function reopen() {
+    if (
+      !window.confirm(
+        "Rouvrir le tirage ? La composition publiée sera retirée : les joueurs ne verront plus leurs équipes tant que tu n'auras pas republié."
+      )
+    )
+      return;
+    actions.resetGeneration();
+  }
 
   return (
     <div className="space-y-5">
@@ -28,23 +41,25 @@ export function AdminView() {
 
       <ManageMatch match={match} />
 
-      <section className="card p-5">
-        <h2 className="font-display text-lg font-bold">Générer les équipes</h2>
-        <p className="text-sm text-muted">
-          {availablePlayers.length} joueur{availablePlayers.length > 1 ? "s" : ""} prêt
-          {availablePlayers.length > 1 ? "s" : ""} (dispo + postes déclarés).
-        </p>
+      {!published && (
+        <section className="card p-5">
+          <h2 className="font-display text-lg font-bold">Générer les équipes</h2>
+          <p className="text-sm text-muted">
+            {availablePlayers.length} joueur{availablePlayers.length > 1 ? "s" : ""} prêt
+            {availablePlayers.length > 1 ? "s" : ""} (dispo + postes déclarés).
+          </p>
 
-        <div className="mt-4 grid grid-cols-2 gap-2.5">
-          <ModeCard active={genMode === "balanced"} onClick={() => setGenMode("balanced")} emoji="🎯" title="Équilibré" desc="Postes couverts, équipes cohérentes." />
-          <ModeCard active={genMode === "fun"} onClick={() => setGenMode("fun")} emoji="🎲" title="Rapide / fun" desc="Tirage express bien réparti." />
-        </div>
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
+            <ModeCard active={genMode === "balanced"} onClick={() => setGenMode("balanced")} emoji="🎯" title="Équilibré" desc="Postes couverts, équipes cohérentes." />
+            <ModeCard active={genMode === "fun"} onClick={() => setGenMode("fun")} emoji="🎲" title="Rapide / fun" desc="Tirage express bien réparti." />
+          </div>
 
-        <button disabled={!enough} onClick={() => actions.generate(genMode)} className="btn-primary mt-4 w-full py-3 text-base">
-          {hasResult ? "🎲 Relancer le tirage" : "🎲 Générer les équipes"}
-        </button>
-        {!enough && <p className="mt-2 text-center text-[13px] text-rose/90">Il faut au moins 4 joueurs disponibles avec un poste.</p>}
-      </section>
+          <button disabled={!enough} onClick={() => actions.generate(genMode)} className="btn-primary mt-4 w-full py-3 text-base">
+            {hasResult ? "🎲 Relancer le tirage" : "🎲 Générer les équipes"}
+          </button>
+          {!enough && <p className="mt-2 text-center text-[13px] text-rose/90">Il faut au moins 4 joueurs disponibles avec un poste.</p>}
+        </section>
+      )}
 
       {hasResult && result && (
         <>
@@ -56,11 +71,16 @@ export function AdminView() {
               <button onClick={() => actions.publish()} className="btn-primary py-3">🔒 Publier les équipes</button>
             </div>
           ) : (
-            <div className="card flex items-center gap-3 border-lime/30 bg-lime/5 p-4">
-              <span className="text-xl">🔒</span>
-              <p className="text-sm text-lime">
-                Composition définitive publiée. Tous les joueurs la voient maintenant — impossible de la changer.
-              </p>
+            <div className="card border-lime/30 bg-lime/5 p-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔒</span>
+                <p className="text-sm text-lime">
+                  Composition définitive publiée. Tous les joueurs la voient maintenant.
+                </p>
+              </div>
+              <button onClick={reopen} className="btn-ghost mt-3 w-full py-2.5 text-[13px]">
+                Rouvrir le tirage
+              </button>
             </div>
           )}
         </>
