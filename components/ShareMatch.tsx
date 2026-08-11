@@ -37,12 +37,20 @@ export function ShareMatch() {
       </p>
 
       <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-        {/* Fond clair derrière le QR : indispensable pour qu'il reste scannable. */}
+        {/* Modules sombres sur fond blanc + quiet zone : le contraste attendu par
+            les caméras. Des modules lime sur fond clair ne se scannent pas. */}
         <div className="shrink-0 rounded-2xl bg-slate-100 p-3">
           {shareUrl ? (
-            <QRCodeSVG value={shareUrl} size={160} bgColor="#0E141B" fgColor="#A3E635" />
+            <QRCodeSVG
+              value={shareUrl}
+              size={180}
+              bgColor="#FFFFFF"
+              fgColor="#0A0E12"
+              level="M"
+              marginSize={3}
+            />
           ) : (
-            <div className="h-40 w-40" />
+            <div className="h-[180px] w-[180px]" />
           )}
         </div>
 
