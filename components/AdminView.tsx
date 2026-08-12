@@ -41,9 +41,14 @@ export function AdminView() {
     <div className="space-y-5">
       <MatchHero />
 
-      <ShareMatch />
-
-      <ManageMatch match={match} />
+      {/* Un match joué ne s'invite plus, ne se modifie plus, ne s'annule plus :
+          pour y revenir, il faut passer par « Rouvrir le match ». */}
+      {!finished && (
+        <>
+          <ShareMatch />
+          <ManageMatch match={match} />
+        </>
+      )}
 
       <ResultForm />
 

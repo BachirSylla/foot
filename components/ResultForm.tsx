@@ -22,6 +22,7 @@ export function ResultForm() {
   }, [score]);
 
   if (!match || (match.status !== "published" && match.status !== "finished")) return null;
+  const finished = match.status === "finished";
 
   const scoreA = Number(a);
   const scoreB = Number(b);
@@ -37,6 +38,16 @@ export function ResultForm() {
     });
     if (!ok) return;
     actions.saveResult(scoreA, scoreB);
+  }
+
+  async function reopen() {
+    const ok = await confirm({
+      message:
+        "Rouvrir ce match ? Il repassera en « équipes publiées » et sortira du classement tant qu'il n'est pas re-terminé.",
+      confirmLabel: "Rouvrir",
+    });
+    if (!ok) return;
+    actions.reopenMatch();
   }
 
   return (
@@ -80,6 +91,12 @@ export function ResultForm() {
           {score ? "Corriger le résultat" : "Enregistrer le résultat"}
         </button>
       </form>
+
+      {finished && (
+        <button onClick={reopen} className="btn-ghost mt-3 w-full py-2.5 text-[13px]">
+          Rouvrir le match
+        </button>
+      )}
     </section>
   );
 }

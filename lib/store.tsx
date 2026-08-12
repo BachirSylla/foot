@@ -64,6 +64,8 @@ interface Ctx {
     resetGeneration: () => void;
     /** Saisit (ou corrige) le score : le match passe en « terminé ». */
     saveResult: (scoreA: number, scoreB: number) => void;
+    /** Ramène un match terminé en « équipes publiées » (le score est conservé). */
+    reopenMatch: () => void;
     updateMatch: (patch: MatchPatch) => void;
     cancelMatch: () => void;
   };
@@ -331,6 +333,12 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
     [mode, matchId]
   );
 
+  // Le score reste en base : comme la vue `player_standings` ne compte que les
+  // matchs 'finished', il sort du classement jusqu'à la prochaine validation.
+  const reopenMatch = useCallback(() => {
+    applyStatus("published");
+  }, [applyStatus]);
+
   const updateMatch = useCallback(
     (patch: MatchPatch) => {
       if (mode === "demo") {
@@ -382,13 +390,13 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       revealing,
       actions: {
         setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
-        publish, unpublish, resetGeneration, saveResult, updateMatch, cancelMatch,
+        publish, unpublish, resetGeneration, saveResult, reopenMatch, updateMatch, cancelMatch,
       },
     };
   }, [
     ready, mode, currentUser, isAdmin, role, match, roster, participations, result, score, revealing,
     setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
-    publish, unpublish, resetGeneration, saveResult, updateMatch, cancelMatch,
+    publish, unpublish, resetGeneration, saveResult, reopenMatch, updateMatch, cancelMatch,
   ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
