@@ -93,7 +93,7 @@ export function TeamsBoard({
     <section>
       <div className="mb-3 flex items-center justify-center gap-3">
         <span className="font-display text-sm font-bold text-cyan">ÉQUIPE A</span>
-        <span className="grid h-7 w-7 place-items-center rounded-full border border-line bg-base-700 text-[11px] font-bold text-muted">
+        <span className="grid h-7 w-7 place-items-center rounded-full border border-line bg-ink-700 text-[11px] font-bold text-muted">
           VS
         </span>
         <span className="font-display text-sm font-bold text-rose">ÉQUIPE B</span>

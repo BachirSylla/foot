@@ -42,7 +42,7 @@ export function Avatar({
       : "ring-lime/40 text-lime";
   return (
     <span
-      className={`grid place-items-center rounded-full bg-base-600 font-display font-bold ring-1 ${ring}`}
+      className={`grid place-items-center rounded-full bg-ink-600 font-display font-bold ring-1 ${ring}`}
       style={{ width: size, height: size, fontSize: size * 0.36 }}
     >
       {initials(name)}

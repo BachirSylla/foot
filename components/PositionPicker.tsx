@@ -48,7 +48,7 @@ export function PositionPicker({
               </span>
             </span>
             {active && (
-              <span className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-lime text-[11px] font-bold text-base-800">
+              <span className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-lime text-[11px] font-bold text-ink-800">
                 {rank + 1}
               </span>
             )}

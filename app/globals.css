@@ -14,7 +14,7 @@ body {
 }
 
 body {
-  @apply bg-base text-slate-100 antialiased;
+  @apply bg-ink text-slate-100 antialiased;
   background-image:
     radial-gradient(ellipse 90% 55% at 50% -8%, rgba(163, 230, 53, 0.10), transparent 55%),
     radial-gradient(ellipse 70% 50% at 90% 0%, rgba(34, 211, 238, 0.07), transparent 55%);
@@ -36,7 +36,7 @@ body {
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-line bg-base-700/70 shadow-card backdrop-blur-sm;
+    @apply rounded-2xl border border-line bg-ink-700/70 shadow-card backdrop-blur-sm;
   }
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs font-medium text-muted;
@@ -46,7 +46,7 @@ body {
       transition-all duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn bg-lime text-base-800 hover:bg-lime-soft shadow-glow;
+    @apply btn bg-lime text-ink-800 hover:bg-lime-soft shadow-glow;
   }
   .btn-ghost {
     @apply btn border border-line bg-white/[0.02] text-slate-200 hover:bg-white/[0.06];

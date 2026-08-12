@@ -80,7 +80,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={() => close(false)}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-base/80 px-4 backdrop-blur"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/80 px-4 backdrop-blur"
           >
             <motion.div
               role="dialog"

@@ -20,7 +20,7 @@ export function Header({ right }: { right?: ReactNode }) {
   return (
     <header className="flex items-center justify-between">
       <Link href="/" className="flex items-center gap-2.5">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-lime text-base-800 shadow-glow">
+        <div className="grid h-9 w-9 place-items-center rounded-xl bg-lime text-ink-800 shadow-glow">
           <BallIcon />
         </div>
         <div className="leading-tight">

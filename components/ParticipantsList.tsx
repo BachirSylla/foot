@@ -73,7 +73,7 @@ export function ParticipantsList() {
                 <span className="relative">
                   <Avatar name={name} size={38} accent={accent} />
                   <span
-                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-base-700 ${
+                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-ink-700 ${
                       DOT[part.status]
                     }`}
                   />

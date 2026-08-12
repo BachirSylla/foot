@@ -16,7 +16,7 @@ export function MatchDetail() {
   if (!ready) return <Splash />;
 
   const toggle = isAdmin ? (
-    <div className="flex rounded-xl border border-line bg-base-700/60 p-1 text-xs font-semibold">
+    <div className="flex rounded-xl border border-line bg-ink-700/60 p-1 text-xs font-semibold">
       <button
         onClick={() => setRole("player")}
         className={`rounded-lg px-3 py-1.5 transition ${

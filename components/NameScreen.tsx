@@ -31,7 +31,7 @@ export function NameScreen() {
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-lime text-base-800 shadow-glow">
+        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-lime text-ink-800 shadow-glow">
           <span className="text-2xl">👋</span>
         </div>
         <h1 className="mt-4 font-display text-2xl font-bold tracking-tight">Comment tu t'appelles ?</h1>

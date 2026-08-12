@@ -8,7 +8,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        base: {
+        // Les fonds sombres s'appellent `ink`, PAS `base` : une couleur nommée
+        // `base` génère un utilitaire `.text-base` qui pose `color:#0A0E12` en
+        // plus de la taille de police homonyme de Tailwind. Résultat, un
+        // `text-base` écrit pour la taille rendait le texte noir sur fond noir.
+        ink: {
           DEFAULT: "#0A0E12", // fond
           800: "#0E141B",
           700: "#121A22",

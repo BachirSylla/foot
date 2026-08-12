@@ -31,7 +31,7 @@ export function LoginScreen() {
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-lime text-base-800 shadow-glow">
+        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-lime text-ink-800 shadow-glow">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="9" />
             <path d="M12 7l3.5 2.5-1.3 4.1h-4.4L8.5 9.5 12 7z" fill="currentColor" stroke="none" />

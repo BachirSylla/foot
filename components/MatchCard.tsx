@@ -21,13 +21,17 @@ export function MatchCard({
   return (
     <Link
       href={`/m/${match.id}`}
-      className={`card block p-4 transition-all hover:border-lime/30 hover:bg-base-700/90 active:scale-[0.995] ${
+      className={`card block p-4 transition-all hover:border-lime/30 hover:bg-ink-700/90 active:scale-[0.995] ${
         past ? "opacity-70" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate font-display text-base font-bold tracking-tight">{match.title}</h3>
+          {/* Couleur explicite : un titre de carte ne doit jamais dépendre de
+              l'héritage pour rester lisible sur le fond sombre. */}
+          <h3 className="truncate font-display text-lg font-bold tracking-tight text-slate-100">
+            {match.title}
+          </h3>
           <p className="mt-0.5 truncate text-[13px] text-muted">
             {day} {dayNum} {month} · {time} · {match.location}
           </p>
