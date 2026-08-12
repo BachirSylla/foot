@@ -6,6 +6,7 @@ import { MatchHero } from "./MatchHero";
 import { PositionPicker } from "./PositionPicker";
 import { ParticipantsList } from "./ParticipantsList";
 import { PublishedTeams } from "./TeamsBoard";
+import { Scoreboard } from "./Scoreboard";
 import type { Availability } from "@/lib/types";
 
 const AVAIL: { key: Availability; label: string; emoji: string; cls: string }[] = [
@@ -29,7 +30,12 @@ export function PlayerView() {
     <div className="space-y-5">
       <MatchHero />
 
-      {match.status === "published" ? (
+      {match.status === "finished" ? (
+        <>
+          <Scoreboard />
+          <PublishedTeams />
+        </>
+      ) : match.status === "published" ? (
         <PublishedTeams />
       ) : (
         <section className="card p-5">

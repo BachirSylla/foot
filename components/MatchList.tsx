@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
@@ -9,13 +10,14 @@ import * as demoStore from "@/lib/demoStore";
 import { useDemoState } from "@/lib/demoStore";
 import { CURRENT_USER_ID } from "@/lib/mock";
 import { isUpcoming } from "@/lib/matchDisplay";
-import type { Availability, Match } from "@/lib/types";
+import type { Availability, Match, MatchScore } from "@/lib/types";
 import { MatchCard } from "./MatchCard";
 import { MatchForm, type MatchFormValues } from "./MatchForm";
 import { useConfirm } from "./ConfirmDialog";
 
 type Counts = Record<string, { available: number; maybe: number }>;
 type Mine = Record<string, Availability>;
+type Scores = Record<string, MatchScore>;
 
 /**
  * Accueil : tous les matchs, à venir puis passés. Plusieurs matchs peuvent être
@@ -31,6 +33,7 @@ export function MatchList() {
   const [liveMatches, setLiveMatches] = useState<Match[]>([]);
   const [liveCounts, setLiveCounts] = useState<Counts>({});
   const [liveMine, setLiveMine] = useState<Mine>({});
+  const [liveScores, setLiveScores] = useState<Scores>({});
   const [loading, setLoading] = useState(live);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -45,12 +48,14 @@ export function MatchList() {
     const matches = await repo.listMatches(sb);
     setLiveMatches(matches);
     const ids = matches.map((m) => m.id);
-    const [counts, mine] = await Promise.all([
+    const [counts, mine, scores] = await Promise.all([
       repo.fetchParticipationCounts(sb, ids),
       userId ? repo.fetchMyParticipations(sb, userId, ids) : Promise.resolve({} as Mine),
+      repo.fetchResults(sb, ids),
     ]);
     setLiveCounts(counts);
     setLiveMine(mine);
+    setLiveScores(scores);
   }, [userId]);
 
   useEffect(() => {
@@ -115,6 +120,7 @@ export function MatchList() {
   const matches = live ? liveMatches : demoStore.listMatches();
   const counts = live ? liveCounts : demoCounts;
   const mine = live ? liveMine : demoMine;
+  const scores = live ? liveScores : demo.scoreByMatch;
 
   const upcoming = matches.filter((m) => isUpcoming(m.status));
   const past = matches.filter((m) => !isUpcoming(m.status));
@@ -199,6 +205,7 @@ export function MatchList() {
                   match={m}
                   available={counts[m.id]?.available ?? 0}
                   myStatus={mine[m.id]}
+                  score={scores[m.id]}
                 />
               ))
             )}
@@ -220,10 +227,28 @@ export function MatchList() {
                     match={m}
                     available={counts[m.id]?.available ?? 0}
                     myStatus={mine[m.id]}
+                    score={scores[m.id]}
                   />
                 ))}
             </section>
           )}
+
+          {/* Raccourci vers le classement (aussi accessible depuis l'en-tête). */}
+          <Link
+            href="/classement"
+            className="card flex items-center justify-between p-4 transition-all hover:border-lime/30 hover:bg-ink-700/90"
+          >
+            <span className="flex items-center gap-2.5">
+              <span className="text-xl">🏆</span>
+              <span>
+                <span className="block text-sm font-semibold text-slate-100">Classement interne</span>
+                <span className="block text-[12px] text-muted">
+                  Points, victoires et matchs joués
+                </span>
+              </span>
+            </span>
+            <span className="text-[13px] text-muted">Voir →</span>
+          </Link>
         </>
       )}
     </div>

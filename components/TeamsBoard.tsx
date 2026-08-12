@@ -120,14 +120,18 @@ export function TeamsBoard({
 
 /** Vue lecture seule pour les joueurs, une fois la compo publiée. */
 export function PublishedTeams() {
-  const { result } = useStore();
+  const { result, match } = useStore();
   if (!result) return null;
+  // Match joué : le score est déjà annoncé au-dessus, on n'annonce plus le match.
+  const finished = match?.status === "finished";
   return (
     <div className="space-y-3">
-      <div className="card flex items-center gap-3 border-lime/30 bg-lime/5 p-4">
-        <span className="text-xl">🎉</span>
-        <p className="text-sm text-lime">Les équipes sont tombées ! Bon match vendredi.</p>
-      </div>
+      {!finished && (
+        <div className="card flex items-center gap-3 border-lime/30 bg-lime/5 p-4">
+          <span className="text-xl">🎉</span>
+          <p className="text-sm text-lime">Les équipes sont tombées ! Bon match vendredi.</p>
+        </div>
+      )}
       <TeamsBoard result={result} locked />
     </div>
   );

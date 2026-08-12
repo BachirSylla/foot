@@ -8,6 +8,8 @@ import { MatchHero } from "./MatchHero";
 import { ShareMatch } from "./ShareMatch";
 import { TeamsBoard } from "./TeamsBoard";
 import { MatchForm } from "./MatchForm";
+import { ResultForm } from "./ResultForm";
+import { Scoreboard } from "./Scoreboard";
 import { Avatar, PositionBadge } from "./ui";
 
 export function AdminView() {
@@ -21,6 +23,7 @@ export function AdminView() {
   const enough = availablePlayers.length >= 4;
   const hasResult = !!result && match.status !== "open";
   const published = match.status === "published";
+  const finished = match.status === "finished";
 
   // Déverrouiller retire la composition de l'écran des joueurs : geste volontaire,
   // jamais un clic distrait — c'est ce qui rend la promesse de verrouillage crédible.
@@ -42,7 +45,9 @@ export function AdminView() {
 
       <ManageMatch match={match} />
 
-      {!published && (
+      <ResultForm />
+
+      {!published && !finished && (
         <section className="card p-5">
           <h2 className="font-display text-lg font-bold">Générer les équipes</h2>
           <p className="text-sm text-muted">
@@ -64,14 +69,18 @@ export function AdminView() {
 
       {hasResult && result && (
         <>
-          <TeamsBoard result={result} locked={match.status === "published"} />
+          {finished && <Scoreboard />}
 
-          {match.status !== "published" ? (
+          <TeamsBoard result={result} locked={published || finished} />
+
+          {!published && !finished && (
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => actions.resetGeneration()} className="btn-ghost py-3">Annuler</button>
               <button onClick={() => actions.publish()} className="btn-primary py-3">🔒 Publier les équipes</button>
             </div>
-          ) : (
+          )}
+
+          {published && (
             <div className="card border-lime/30 bg-lime/5 p-4">
               <div className="flex items-center gap-3">
                 <span className="text-xl">🔒</span>

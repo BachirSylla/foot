@@ -53,6 +53,23 @@ export interface CompositionRow {
   generated_at: string;
 }
 
+export interface MatchResultRow {
+  match_id: string;
+  score_a: number;
+  score_b: number;
+  recorded_at: string;
+}
+
+/** Vue `player_standings` (agrégat, pas une table). */
+export interface StandingsViewRow {
+  user_id: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  points: number;
+}
+
 export interface AssignmentRow {
   id: string;
   composition_id: string;

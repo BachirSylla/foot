@@ -6,13 +6,24 @@
 // (`StoreProvider`) lisent la même source et se re-rendent ensemble.
 
 import { useSyncExternalStore } from "react";
-import type { GenerationResult, Match, MatchStatus, Participation } from "./types";
-import { DEMO_MATCH, INITIAL_PARTICIPATIONS } from "./mock";
+import type {
+  GenerationResult,
+  Match,
+  MatchScore,
+  MatchStatus,
+  Participation,
+  StandingRow,
+} from "./types";
+import { DEMO_MATCH, DEMO_PLAYERS, INITIAL_PARTICIPATIONS } from "./mock";
+import { buildStandings, type StandingEntry } from "./standings";
 
 export interface DemoState {
   matches: Match[];
   participationsByMatch: Record<string, Record<string, Participation>>;
+  /** La COMPOSITION (équipes tirées) par match. */
   resultByMatch: Record<string, GenerationResult | null>;
+  /** Le SCORE final par match. Distinct de la compo, comme dans le store. */
+  scoreByMatch: Record<string, MatchScore>;
 }
 
 export interface MatchInput {
@@ -29,6 +40,7 @@ function initialState(): DemoState {
     matches: [DEMO_MATCH],
     participationsByMatch: { [DEMO_MATCH.id]: parts },
     resultByMatch: {},
+    scoreByMatch: {},
   };
 }
 
@@ -77,6 +89,39 @@ export function getResult(matchId: string): GenerationResult | null {
   return state.resultByMatch[matchId] ?? null;
 }
 
+export function getScore(matchId: string): MatchScore | null {
+  return state.scoreByMatch[matchId] ?? null;
+}
+
+/**
+ * Équivalent en mémoire de la vue SQL `player_standings` : on part des matchs
+ * terminés qui ont un score, et des joueurs réellement placés dans une équipe
+ * (la compo stockée fait office de `team_assignments`).
+ */
+export function getStandings(): StandingRow[] {
+  const names: Record<string, string> = {};
+  for (const p of DEMO_PLAYERS) names[p.id] = p.name;
+
+  const entries: StandingEntry[] = [];
+  for (const match of state.matches) {
+    if (match.status !== "finished") continue;
+    const score = state.scoreByMatch[match.id];
+    const composition = state.resultByMatch[match.id];
+    if (!score || !composition) continue;
+    for (const { player } of composition.teamA.players) {
+      entries.push({ userId: player.id, goalsFor: score.scoreA, goalsAgainst: score.scoreB });
+    }
+    for (const { player } of composition.teamB.players) {
+      entries.push({ userId: player.id, goalsFor: score.scoreB, goalsAgainst: score.scoreA });
+    }
+    // Les noms de la compo priment (un joueur peut ne pas être dans DEMO_PLAYERS).
+    for (const { player } of [...composition.teamA.players, ...composition.teamB.players]) {
+      names[player.id] = player.name;
+    }
+  }
+  return buildStandings(entries, names);
+}
+
 // --- Écriture --------------------------------------------------------------
 
 export function upsertParticipation(matchId: string, participation: Participation): void {
@@ -98,6 +143,10 @@ export function removeParticipation(matchId: string, playerId: string): void {
 
 export function setResult(matchId: string, result: GenerationResult | null): void {
   commit({ ...state, resultByMatch: { ...state.resultByMatch, [matchId]: result } });
+}
+
+export function setScore(matchId: string, score: MatchScore): void {
+  commit({ ...state, scoreByMatch: { ...state.scoreByMatch, [matchId]: score } });
 }
 
 export function setStatus(matchId: string, status: MatchStatus): void {

@@ -178,11 +178,14 @@ create policy "participations: admin" on participations
 
 -- compositions : lisibles seulement une fois PUBLIÉES (sinon admin only).
 -- => empêche les joueurs de voir la compo avant la publication officielle.
+-- 'finished' est inclus : une fois le score saisi, le match reste consultable
+-- avec ses équipes (c'est la même compo, déjà publique).
 create policy "compositions: read when published" on team_compositions
   for select using (
     is_admin() or exists (
       select 1 from matches m
-      where m.id = team_compositions.match_id and m.status = 'published'
+      where m.id = team_compositions.match_id
+        and m.status in ('published', 'finished')
     )
   );
 create policy "compositions: admin write" on team_compositions
@@ -193,7 +196,8 @@ create policy "assignments: read when published" on team_assignments
     is_admin() or exists (
       select 1 from team_compositions c
       join matches m on m.id = c.match_id
-      where c.id = team_assignments.composition_id and m.status = 'published'
+      where c.id = team_assignments.composition_id
+        and m.status in ('published', 'finished')
     )
   );
 create policy "assignments: admin write" on team_assignments
@@ -235,10 +239,42 @@ create trigger on_auth_user_created
   for each row execute function handle_new_user();
 
 -- ===========================================================================
--- Temps réel : publier les tables suivies par l'app (dispo + compositions).
+-- Classement interne (V2) : agrégé depuis les matchs TERMINÉS qui ont un score.
+--
+-- Un joueur ne compte que s'il a été réellement placé dans une équipe
+-- (team_assignments), pas seulement présent. Barème victoire 3 / nul 1 /
+-- défaite 0 — miroir de POINTS dans lib/standings.ts.
+--
+-- La vue reste en `security_definer` (défaut Postgres) : elle n'expose que des
+-- agrégats par joueur, et `security_invoker = on` la viderait pour les joueurs
+-- (la policy de team_assignments ne couvre pas les matchs d'avant leur arrivée).
+-- ===========================================================================
+create or replace view player_standings as
+select
+  a.user_id,
+  count(*)                                                                   as played,
+  count(*) filter (where (a.team = 'A' and r.score_a > r.score_b)
+                      or (a.team = 'B' and r.score_b > r.score_a))           as wins,
+  count(*) filter (where r.score_a = r.score_b)                              as draws,
+  count(*) filter (where (a.team = 'A' and r.score_a < r.score_b)
+                      or (a.team = 'B' and r.score_b < r.score_a))           as losses,
+  count(*) filter (where (a.team = 'A' and r.score_a > r.score_b)
+                      or (a.team = 'B' and r.score_b > r.score_a)) * 3
+    + count(*) filter (where r.score_a = r.score_b)                          as points
+from team_assignments a
+join team_compositions c on c.id = a.composition_id
+join matches m           on m.id = c.match_id and m.status = 'finished'
+join match_results r     on r.match_id = m.id
+group by a.user_id;
+
+grant select on player_standings to authenticated, anon;
+
+-- ===========================================================================
+-- Temps réel : publier les tables suivies par l'app (dispo, compositions, score).
 -- Sans ça, les souscriptions realtime côté client ne reçoivent rien.
 -- ===========================================================================
 alter publication supabase_realtime add table participations;
 alter publication supabase_realtime add table team_compositions;
 alter publication supabase_realtime add table team_assignments;
 alter publication supabase_realtime add table matches;
+alter publication supabase_realtime add table match_results;

@@ -32,6 +32,16 @@ export function Header({ right }: { right?: ReactNode }) {
       </Link>
 
       <div className="flex items-center gap-2">
+        <Link
+          href="/classement"
+          title="Classement"
+          // Sur mobile le libellé est masqué : sans ça, le lien ne serait
+          // annoncé que « 🏆 » par les lecteurs d'écran.
+          aria-label="Classement"
+          className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold text-muted transition hover:border-lime/30 hover:text-lime"
+        >
+          🏆 <span className="hidden sm:inline">Classement</span>
+        </Link>
         {right}
         {auth.configured && auth.session && (
           <button

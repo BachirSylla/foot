@@ -6,6 +6,7 @@ import type {
   Availability,
   GenerationResult,
   Match,
+  MatchScore,
   Participation,
   Player,
   Position,
@@ -45,7 +46,10 @@ interface Ctx {
   participations: Record<string, Participation>;
   availablePlayers: Player[];
   counts: { available: number; maybe: number; unavailable: number };
+  /** La composition (équipes tirées). */
   result: GenerationResult | null;
+  /** Le score final, une fois le match terminé. Distinct de `result`. */
+  score: MatchScore | null;
   revealing: boolean;
   actions: {
     setMyAvailability: (status: Availability) => void;
@@ -58,6 +62,8 @@ interface Ctx {
     /** Retire la publication mais garde la composition (statut `generated`). */
     unpublish: () => void;
     resetGeneration: () => void;
+    /** Saisit (ou corrige) le score : le match passe en « terminé ». */
+    saveResult: (scoreA: number, scoreB: number) => void;
     updateMatch: (patch: MatchPatch) => void;
     cancelMatch: () => void;
   };
@@ -111,6 +117,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
   const [liveRoster, setLiveRoster] = useState<Player[]>([]);
   const [liveParticipations, setLiveParticipations] = useState<Record<string, Participation>>({});
   const [liveResult, setLiveResult] = useState<GenerationResult | null>(null);
+  const [liveScore, setLiveScore] = useState<MatchScore | null>(null);
   const [revealing, setRevealing] = useState(false);
 
   // Lecture : le mode démo lit le store en mémoire, le mode live l'état chargé.
@@ -119,6 +126,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
   const participations =
     mode === "demo" ? demo.participationsByMatch[matchId] ?? NO_PARTICIPATIONS : liveParticipations;
   const result = mode === "demo" ? demo.resultByMatch[matchId] ?? null : liveResult;
+  const score = mode === "demo" ? demo.scoreByMatch[matchId] ?? null : liveScore;
 
   const currentUser: CurrentUser | null =
     mode === "demo"
@@ -147,9 +155,11 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       setLiveParticipations(map);
       const comp = await repo.fetchComposition(sb, m.id, rm);
       setLiveResult(comp?.result ?? null);
+      setLiveScore(await repo.fetchResult(sb, m.id));
     } else {
       setLiveParticipations({});
       setLiveResult(null);
+      setLiveScore(null);
     }
   }, [matchId]);
 
@@ -190,6 +200,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       .on("postgres_changes", { event: "*", schema: "public", table: "participations", filter: `match_id=eq.${matchId}` }, () => reloadRef.current())
       .on("postgres_changes", { event: "*", schema: "public", table: "team_compositions", filter: `match_id=eq.${matchId}` }, () => reloadRef.current())
       .on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` }, () => reloadRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "match_results", filter: `match_id=eq.${matchId}` }, () => reloadRef.current())
       .subscribe();
     return () => {
       sb.removeChannel(channel);
@@ -305,6 +316,21 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
     applyStatus("open");
   }, [mode, matchId, applyStatus]);
 
+  const saveResult = useCallback(
+    (scoreA: number, scoreB: number) => {
+      if (mode === "demo") {
+        demoStore.setScore(matchId, { scoreA, scoreB });
+        demoStore.setStatus(matchId, "finished");
+      } else {
+        setLiveScore({ scoreA, scoreB });
+        setLiveMatch((m) => (m ? { ...m, status: "finished" } : m));
+        const sb = getSupabase();
+        if (sb) repo.saveResult(sb, matchId, scoreA, scoreB).catch(console.error);
+      }
+    },
+    [mode, matchId]
+  );
+
   const updateMatch = useCallback(
     (patch: MatchPatch) => {
       if (mode === "demo") {
@@ -352,16 +378,17 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       availablePlayers: available,
       counts: { available: a, maybe: mb, unavailable: u },
       result,
+      score,
       revealing,
       actions: {
         setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
-        publish, unpublish, resetGeneration, updateMatch, cancelMatch,
+        publish, unpublish, resetGeneration, saveResult, updateMatch, cancelMatch,
       },
     };
   }, [
-    ready, mode, currentUser, isAdmin, role, match, roster, participations, result, revealing,
+    ready, mode, currentUser, isAdmin, role, match, roster, participations, result, score, revealing,
     setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
-    publish, unpublish, resetGeneration, updateMatch, cancelMatch,
+    publish, unpublish, resetGeneration, saveResult, updateMatch, cancelMatch,
   ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

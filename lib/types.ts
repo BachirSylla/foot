@@ -94,3 +94,20 @@ export interface Match {
   maxPlayers: number;
   status: MatchStatus;
 }
+
+/** Score final d'un match (équipe A vs équipe B). */
+export interface MatchScore {
+  scoreA: number;
+  scoreB: number;
+}
+
+/** Une ligne du classement interne. */
+export interface StandingRow {
+  userId: string;
+  name: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  points: number;
+}

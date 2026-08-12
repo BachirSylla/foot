@@ -15,6 +15,9 @@ teammix/
 │   ├── MatchList.tsx    # Accueil : à venir / passés + « Nouveau match » (admin)
 │   ├── MatchCard.tsx    # Une carte de match (lien vers /m/{id})
 │   ├── MatchDetail.tsx  # Contenu d'un match (joueur ↔ organisateur)
+│   ├── ResultForm.tsx   # Saisie / correction du score (admin)
+│   ├── Scoreboard.tsx   # Bandeau de score d'un match terminé
+│   ├── Standings.tsx    # Tableau du classement
 │   ├── AuthGate.tsx     # Garde d'auth, indépendante des données
 │   └── Header.tsx       # Logo (retour accueil) + nom + déconnexion
 ├── lib/                 # Logique + données
@@ -26,6 +29,7 @@ teammix/
 │   ├── repo.ts          # Requêtes (matchs, participations, compositions)
 │   ├── store.tsx        # Store d'UN match (démo/live) + temps réel
 │   ├── demoStore.ts     # Base en mémoire du mode démo (multi-matchs)
+│   ├── standings.ts     # Barème + agrégation du classement (+ tests)
 │   ├── matchDisplay.ts  # Libellés de statut + format de date
 │   └── mock.ts          # Données de démo
 ├── supabase/
@@ -46,9 +50,12 @@ npm run build    # build de production
 
 ## Les routes
 - `/` — **accueil** : tous les matchs, « À venir » puis « Passés » (repliable). Chaque
-  carte montre le statut et le nombre de présents ; l'admin y crée un match.
+  carte montre le statut, le nombre de présents et, pour un match terminé, son score ;
+  l'admin y crée un match.
 - `/m/{id}` — **un match** : la réponse du joueur, qui vient, et côté organisateur le
-  QR **de ce match**, le tirage, la publication, la modification / l'annulation.
+  QR **de ce match**, le tirage, la publication, la saisie du **résultat**, la
+  modification / l'annulation.
+- `/classement` — **classement interne** (Rang · Joueur · MJ · V · N · D · Pts).
 
 Plusieurs matchs peuvent être ouverts en même temps (mardi **et** vendredi) : les
 réponses, la composition et le QR sont scopés par match.
@@ -59,7 +66,9 @@ réponses, la composition et le QR sont scopés par match.
 3. Bascule sur **Vue Admin** (en haut à droite).
 4. Choisis un mode (Équilibré / Rapide) et **Génère les équipes** → animation de tirage.
 5. **Publie** : la composition se verrouille. Reviens en Vue Joueur → les équipes sont visibles par tous.
-6. Depuis l'accueil, **➕ Nouveau match** en crée un second, indépendant du premier.
+6. Saisis le **résultat** (Équipe A / Équipe B) : le match passe en *terminé*, le
+   score s'affiche pour tous et alimente le **classement**.
+7. Depuis l'accueil, **➕ Nouveau match** en crée un second, indépendant du premier.
 
 > Le mode démo garde tout en mémoire (`lib/demoStore.ts`) : recharger la page
 > remet la démo à son état initial.
@@ -93,8 +102,12 @@ L'app détecte automatiquement le mode :
 6. **Te promouvoir admin** : exécute `supabase/seed.sql` (met ton email en `role = 'admin'`).
    Recharge : tu vois l'onglet **Organiser** pour créer le match et générer les équipes.
 
-> **Base déjà créée avant cette version ?** Exécute aussi
-> `supabase/migrations/001_profiles_read_and_anon.sql` dans le SQL Editor. Elle
+> **Base déjà créée avant cette version ?** Exécute dans le SQL Editor les
+> migrations que tu n'as pas encore passées — elles sont idempotentes :
+> `001_profiles_read_and_anon.sql` puis `002_standings.sql` (vue de classement,
+> compos lisibles sur un match terminé, temps réel du score).
+>
+> Détail de la 001 : elle
 > ouvre la lecture des profils à tous les utilisateurs connectés (sinon un joueur
 > voit « 0/12 », « Qui vient » ne liste que lui et les coéquipiers s'affichent en
 > « Joueur ») et rend le trigger `handle_new_user` compatible avec les comptes
@@ -127,6 +140,22 @@ L'app détecte automatiquement le mode :
 > Aucune migration n'est nécessaire pour le multi-matchs : la table `matches`
 > acceptait déjà plusieurs lignes et la RLS existante (matchs et participations
 > lisibles par tout utilisateur connecté) suffit.
+
+## Résultat & classement (V2)
+
+- L'organisateur saisit le score dès que les équipes sont **publiées**
+  (`components/ResultForm.tsx`). Le match passe en **`finished`**, le score
+  s'affiche pour tous (`components/Scoreboard.tsx`) et les équipes restent
+  visibles en lecture seule. Un match terminé reste **corrigible** (upsert).
+- Le classement (`/classement`) agrège les matchs terminés qui ont un score :
+  **victoire 3 · nul 1 · défaite 0**, départage points → victoires → moins de
+  matchs joués. Seuls les joueurs **réellement placés dans une équipe**
+  (`team_assignments`) comptent, pas les simples présents.
+- En live, l'agrégation est faite par la vue SQL `player_standings` ; le barème,
+  le tri et l'équivalent démo vivent dans `lib/standings.ts` (couvert par
+  `lib/standings.test.ts`). **Changer le barème = changer les deux.**
+- Limite connue (jeu sans compte) : un même joueur sur deux appareils crée deux
+  profils, donc deux lignes de classement.
 
 ### Sécurité
 La clé **anon** est publique par conception (elle vit dans le navigateur) : la sécurité

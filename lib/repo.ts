@@ -7,20 +7,25 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Availability,
   Match,
+  MatchScore,
   MatchStatus,
   Participation,
   Player,
   Position,
   GenerationResult,
+  StandingRow,
   Team,
 } from "./types";
 import type {
   ProfileRow,
   ParticipationRow,
   MatchRow,
+  MatchResultRow,
   CompositionRow,
   AssignmentRow,
+  StandingsViewRow,
 } from "./database.types";
+import { sortStandings } from "./standings";
 
 /**
  * `draft` est le défaut de la colonne en base mais l'app ne le manipule pas :
@@ -300,6 +305,85 @@ export async function cancelMatch(sb: SupabaseClient, matchId: string): Promise<
   }
   const { error } = await sb.from("matches").update({ status: "cancelled" }).eq("id", matchId);
   if (error) throw error;
+}
+
+// --- Résultat & classement (V2) --------------------------------------------
+
+/**
+ * Enregistre (ou corrige) le score, puis passe le match en 'finished'.
+ * Un seul résultat par match : upsert sur `match_id`.
+ */
+export async function saveResult(
+  sb: SupabaseClient,
+  matchId: string,
+  scoreA: number,
+  scoreB: number
+): Promise<void> {
+  const { error } = await sb
+    .from("match_results")
+    .upsert({ match_id: matchId, score_a: scoreA, score_b: scoreB }, { onConflict: "match_id" });
+  if (error) throw error;
+  const { error: mErr } = await sb.from("matches").update({ status: "finished" }).eq("id", matchId);
+  if (mErr) throw mErr;
+}
+
+export async function fetchResult(sb: SupabaseClient, matchId: string): Promise<MatchScore | null> {
+  const { data, error } = await sb
+    .from("match_results")
+    .select("score_a, score_b")
+    .eq("match_id", matchId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const r = data as Pick<MatchResultRow, "score_a" | "score_b">;
+  return { scoreA: r.score_a, scoreB: r.score_b };
+}
+
+/** Les scores de plusieurs matchs d'un coup (cartes de l'accueil). */
+export async function fetchResults(
+  sb: SupabaseClient,
+  matchIds: string[]
+): Promise<Record<string, MatchScore>> {
+  const out: Record<string, MatchScore> = {};
+  if (matchIds.length === 0) return out;
+  const { data, error } = await sb
+    .from("match_results")
+    .select("match_id, score_a, score_b")
+    .in("match_id", matchIds);
+  if (error) throw error;
+  for (const r of data as MatchResultRow[]) {
+    out[r.match_id] = { scoreA: r.score_a, scoreB: r.score_b };
+  }
+  return out;
+}
+
+/**
+ * Classement interne. L'agrégation (V/N/D/points) est faite par la vue SQL
+ * `player_standings` ; ici on ne fait qu'y accrocher les noms et appliquer le
+ * départage (voir `lib/standings.ts`).
+ */
+export async function fetchStandings(sb: SupabaseClient): Promise<StandingRow[]> {
+  const { data, error } = await sb.from("player_standings").select("*");
+  if (error) throw error;
+  const rows = data as StandingsViewRow[];
+  if (rows.length === 0) return [];
+
+  const { data: profiles, error: pErr } = await sb.from("profiles").select("id, full_name");
+  if (pErr) throw pErr;
+  const names: Record<string, string> = {};
+  for (const p of profiles as Pick<ProfileRow, "id" | "full_name">[]) names[p.id] = p.full_name;
+
+  return sortStandings(
+    rows.map((r) => ({
+      userId: r.user_id,
+      name: names[r.user_id] ?? "Joueur",
+      played: r.played,
+      wins: r.wins,
+      draws: r.draws,
+      losses: r.losses,
+      points: r.points,
+    }))
+  );
 }
 
 export async function createMatch(

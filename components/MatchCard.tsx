@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { Availability, Match } from "@/lib/types";
+import type { Availability, Match, MatchScore } from "@/lib/types";
 import { STATUS_CHIP, STATUS_LABEL, formatMatchDate } from "@/lib/matchDisplay";
 
 /** Une ligne de l'accueil : tout le nécessaire pour choisir un match d'un coup d'œil. */
@@ -9,11 +9,14 @@ export function MatchCard({
   match,
   available,
   myStatus,
+  score,
 }: {
   match: Match;
   available: number;
   /** Ma réponse pour ce match (`undefined` = pas encore répondu). */
   myStatus?: Availability;
+  /** Score final, pour un match terminé. */
+  score?: MatchScore;
 }) {
   const { day, dayNum, month, time } = formatMatchDate(match.startsAt);
   const past = match.status === "finished" || match.status === "cancelled";
@@ -36,9 +39,18 @@ export function MatchCard({
             {day} {dayNum} {month} · {time} · {match.location}
           </p>
         </div>
-        <span className={`chip shrink-0 whitespace-nowrap ${STATUS_CHIP[match.status]}`}>
-          {STATUS_LABEL[match.status]}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <span className={`chip whitespace-nowrap ${STATUS_CHIP[match.status]}`}>
+            {STATUS_LABEL[match.status]}
+          </span>
+          {match.status === "finished" && score && (
+            <span className="font-display text-lg font-bold leading-none">
+              <span className="text-cyan">{score.scoreA}</span>
+              <span className="mx-1 text-muted">–</span>
+              <span className="text-rose">{score.scoreB}</span>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
