@@ -19,7 +19,8 @@ export const DEMO_PLAYERS: Player[] = [
 ];
 
 export const DEMO_MATCH: Match = {
-  id: "match-1",
+  // Id stable : la démo est accessible à l'URL /m/demo-1.
+  id: "demo-1",
   title: "Match du vendredi",
   startsAt: "2026-08-14T18:00:00",
   location: "Terrain de l'entreprise",

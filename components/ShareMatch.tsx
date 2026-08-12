@@ -2,13 +2,18 @@
 
 import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { useStore } from "@/lib/store";
 
 /**
  * Carte de partage du match : QR à scanner sur place + lien à envoyer sur WhatsApp.
- * Le lien ouvre l'app, où le joueur rejoint sans mot de passe (auth anonyme).
+ * Le lien pointe sur CE match (/m/{id}) : le joueur rejoint sans mot de passe
+ * (auth anonyme) et atterrit directement sur le bon match, même si plusieurs
+ * sont ouverts en même temps.
  */
 export function ShareMatch() {
-  const shareUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const { match } = useStore();
+  const shareUrl =
+    typeof window !== "undefined" && match ? `${window.location.origin}/m/${match.id}` : "";
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -23,7 +28,8 @@ export function ShareMatch() {
 
   function shareWhatsApp() {
     window.open(
-      `https://wa.me/?text=${encodeURIComponent("⚽ Match du vendredi ! Dis si tu joues : " + shareUrl)}`,
+      // Le titre du match, pas « vendredi » en dur : plusieurs matchs coexistent.
+      `https://wa.me/?text=${encodeURIComponent(`⚽ ${match?.title ?? "Match"} ! Dis si tu joues : ${shareUrl}`)}`,
       "_blank",
       "noopener,noreferrer"
     );

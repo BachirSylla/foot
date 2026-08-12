@@ -2,35 +2,36 @@
 
 import { useState } from "react";
 import { useStore, type GenMode } from "@/lib/store";
+import { useConfirm } from "./ConfirmDialog";
 import type { Match } from "@/lib/types";
 import { MatchHero } from "./MatchHero";
 import { ShareMatch } from "./ShareMatch";
 import { TeamsBoard } from "./TeamsBoard";
+import { MatchForm } from "./MatchForm";
 import { Avatar, PositionBadge } from "./ui";
 
 export function AdminView() {
   const { match, mode, result, availablePlayers, actions } = useStore();
+  const confirm = useConfirm();
   const [genMode, setGenMode] = useState<GenMode>("balanced");
 
-  if (!match) {
-    // En live, l'admin doit créer le premier match.
-    return <CreateMatchForm />;
-  }
+  // La page du match garantit `match` non nul (sinon elle affiche « introuvable »).
+  if (!match) return null;
 
   const enough = availablePlayers.length >= 4;
   const hasResult = !!result && match.status !== "open";
   const published = match.status === "published";
 
-  // Rouvrir le tirage retire la composition publiée : geste volontaire, jamais
-  // un clic distrait — c'est ce qui rend la promesse de verrouillage crédible.
-  function reopen() {
-    if (
-      !window.confirm(
-        "Rouvrir le tirage ? La composition publiée sera retirée : les joueurs ne verront plus leurs équipes tant que tu n'auras pas republié."
-      )
-    )
-      return;
-    actions.resetGeneration();
+  // Déverrouiller retire la composition de l'écran des joueurs : geste volontaire,
+  // jamais un clic distrait — c'est ce qui rend la promesse de verrouillage crédible.
+  // La compo est conservée : l'organisateur peut la republier telle quelle.
+  async function unlock() {
+    const ok = await confirm({
+      message: "Les joueurs ne verront plus les équipes le temps de re-générer.",
+      confirmLabel: "Déverrouiller",
+    });
+    if (!ok) return;
+    actions.unpublish();
   }
 
   return (
@@ -78,8 +79,8 @@ export function AdminView() {
                   Composition définitive publiée. Tous les joueurs la voient maintenant.
                 </p>
               </div>
-              <button onClick={reopen} className="btn-ghost mt-3 w-full py-2.5 text-[13px]">
-                Rouvrir le tirage
+              <button onClick={unlock} className="btn-ghost mt-3 w-full py-2.5 text-[13px]">
+                🔓 Déverrouiller les équipes
               </button>
             </div>
           )}
@@ -113,23 +114,20 @@ export function AdminView() {
   );
 }
 
-function CreateMatchForm() {
-  const { actions } = useStore();
-  return (
-    <section className="card p-5">
-      <h2 className="font-display text-lg font-bold">Créer le prochain match</h2>
-      <p className="text-sm text-muted">Aucun match en cours. Lance-en un pour ouvrir les inscriptions.</p>
-      <MatchForm mode="create" onSubmit={(v) => actions.createMatch(v)} />
-    </section>
-  );
-}
-
 function ManageMatch({ match }: { match: Match }) {
   const { actions } = useStore();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
 
-  function cancel() {
-    if (!window.confirm("Annuler le match ? Les réponses et la composition seront perdues.")) return;
+  async function cancel() {
+    const ok = await confirm({
+      title: "Annuler le match",
+      message: "Le match sera annulé pour tout le monde.",
+      confirmLabel: "Oui, annuler",
+      cancelLabel: "Retour",
+      tone: "danger",
+    });
+    if (!ok) return;
     actions.cancelMatch();
   }
 
@@ -165,85 +163,6 @@ function ManageMatch({ match }: { match: Match }) {
         </>
       )}
     </section>
-  );
-}
-
-export interface MatchFormValues {
-  title: string;
-  startsAt: string;
-  location: string;
-  maxPlayers: number;
-}
-
-/** Découpe un ISO en valeurs locales pour les champs `date` / `time`. */
-function splitLocal(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  };
-}
-
-/** Formulaire partagé par la création et l'édition d'un match. */
-function MatchForm({
-  mode,
-  initial,
-  onSubmit,
-  onCancel,
-}: {
-  mode: "create" | "edit";
-  initial?: Match;
-  onSubmit: (values: MatchFormValues) => void;
-  onCancel?: () => void;
-}) {
-  const start = initial ? splitLocal(initial.startsAt) : null;
-  const [title, setTitle] = useState(initial?.title ?? "Match du vendredi");
-  const [date, setDate] = useState(start?.date ?? "");
-  const [time, setTime] = useState(start?.time ?? "18:00");
-  const [location, setLocation] = useState(initial?.location ?? "Terrain de l'entreprise");
-  const [maxPlayers, setMaxPlayers] = useState(initial?.maxPlayers ?? 12);
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!date) return;
-    const startsAt = new Date(`${date}T${time}:00`).toISOString();
-    onSubmit({ title, startsAt, location, maxPlayers });
-  }
-
-  return (
-    <form onSubmit={submit} className="mt-4 space-y-3">
-      <label className="block">
-        <span className="label mb-1.5 block">Titre</span>
-        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="label mb-1.5 block">Date</span>
-          <input className="input" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label className="block">
-          <span className="label mb-1.5 block">Heure</span>
-          <input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-        </label>
-      </div>
-      <label className="block">
-        <span className="label mb-1.5 block">Lieu</span>
-        <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} />
-      </label>
-      <label className="block">
-        <span className="label mb-1.5 block">Nombre de joueurs visé</span>
-        <input className="input" type="number" min={4} max={30} value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))} />
-      </label>
-      {mode === "create" ? (
-        <button type="submit" className="btn-primary w-full py-3">Créer le match</button>
-      ) : (
-        <div className="grid grid-cols-2 gap-3">
-          <button type="button" onClick={onCancel} className="btn-ghost py-3">Annuler</button>
-          <button type="submit" className="btn-primary py-3">Enregistrer</button>
-        </div>
-      )}
-    </form>
   );
 }
 

@@ -5,7 +5,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  Availability,
   Match,
+  MatchStatus,
   Participation,
   Player,
   Position,
@@ -20,6 +22,11 @@ import type {
   AssignmentRow,
 } from "./database.types";
 
+/**
+ * `draft` est le défaut de la colonne en base mais l'app ne le manipule pas :
+ * on le ramène à `open`. Les autres statuts sont conservés tels quels — l'accueil
+ * a besoin de `finished` / `cancelled` pour classer les matchs passés.
+ */
 function matchFromRow(r: MatchRow): Match {
   return {
     id: r.id,
@@ -27,7 +34,7 @@ function matchFromRow(r: MatchRow): Match {
     startsAt: r.starts_at,
     location: r.location ?? "",
     maxPlayers: r.max_players,
-    status: r.status === "published" ? "published" : r.status === "generated" ? "generated" : "open",
+    status: (r.status === "draft" ? "open" : r.status) as MatchStatus,
   };
 }
 
@@ -42,16 +49,64 @@ export async function fetchRoster(sb: SupabaseClient): Promise<Player[]> {
   }));
 }
 
-export async function fetchCurrentMatch(sb: SupabaseClient): Promise<Match | null> {
+/** Un match précis (page /m/[id]). `null` si l'id n'existe pas / plus. */
+export async function fetchMatchById(sb: SupabaseClient, id: string): Promise<Match | null> {
+  const { data, error } = await sb.from("matches").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? matchFromRow(data as MatchRow) : null;
+}
+
+/** Tous les matchs, du plus récent au plus ancien (l'accueil sépare à venir / passés). */
+export async function listMatches(sb: SupabaseClient): Promise<Match[]> {
   const { data, error } = await sb
     .from("matches")
     .select("*")
-    .in("status", ["open", "generated", "published"])
-    .order("starts_at", { ascending: true })
-    .limit(1);
+    .order("starts_at", { ascending: false });
   if (error) throw error;
-  const row = (data as MatchRow[])[0];
-  return row ? matchFromRow(row) : null;
+  return (data as MatchRow[]).map(matchFromRow);
+}
+
+/** Nombre de présents / peut-être par match, agrégé côté client (une seule requête). */
+export async function fetchParticipationCounts(
+  sb: SupabaseClient,
+  matchIds: string[]
+): Promise<Record<string, { available: number; maybe: number }>> {
+  const counts: Record<string, { available: number; maybe: number }> = {};
+  for (const id of matchIds) counts[id] = { available: 0, maybe: 0 };
+  if (matchIds.length === 0) return counts;
+
+  const { data, error } = await sb
+    .from("participations")
+    .select("match_id, status")
+    .in("match_id", matchIds);
+  if (error) throw error;
+  for (const r of data as Pick<ParticipationRow, "match_id" | "status">[]) {
+    const c = counts[r.match_id];
+    if (!c) continue;
+    if (r.status === "available") c.available++;
+    else if (r.status === "maybe") c.maybe++;
+  }
+  return counts;
+}
+
+/** Ma réponse pour chaque match (badge « ✓ Répondu » sur l'accueil). */
+export async function fetchMyParticipations(
+  sb: SupabaseClient,
+  userId: string,
+  matchIds: string[]
+): Promise<Record<string, Availability>> {
+  const mine: Record<string, Availability> = {};
+  if (matchIds.length === 0) return mine;
+  const { data, error } = await sb
+    .from("participations")
+    .select("match_id, status")
+    .eq("user_id", userId)
+    .in("match_id", matchIds);
+  if (error) throw error;
+  for (const r of data as Pick<ParticipationRow, "match_id" | "status">[]) {
+    mine[r.match_id] = r.status;
+  }
+  return mine;
 }
 
 export async function fetchParticipations(
@@ -83,6 +138,24 @@ export async function upsertParticipation(
       { match_id: matchId, user_id: userId, status, positions },
       { onConflict: "match_id,user_id" }
     );
+  if (error) throw error;
+}
+
+/**
+ * Supprime la réponse d'un joueur pour ce match (ménage d'un doublon par l'admin).
+ * La policy « participations: admin » autorise l'admin à supprimer n'importe quelle
+ * ligne ; un joueur ne peut effacer que la sienne.
+ */
+export async function removeParticipation(
+  sb: SupabaseClient,
+  matchId: string,
+  userId: string
+): Promise<void> {
+  const { error } = await sb
+    .from("participations")
+    .delete()
+    .eq("match_id", matchId)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -180,6 +253,11 @@ export async function setMatchStatus(
   if (status === "published") {
     await sb.from("team_compositions").update({ is_locked: true }).eq("match_id", matchId);
   }
+  if (status === "generated") {
+    // Déverrouillage : la compo est conservée mais redevient invisible pour les
+    // joueurs (la policy RLS ne l'ouvre que sur un match `published`).
+    await sb.from("team_compositions").update({ is_locked: false }).eq("match_id", matchId);
+  }
   if (status === "open") {
     // annulation : on déverrouille et on efface la compo
     const { data } = await sb.from("team_compositions").select("id").eq("match_id", matchId).limit(1);
@@ -210,8 +288,8 @@ export async function updateMatch(
 
 /**
  * Annule le match : supprime la compo éventuelle puis passe le statut en 'cancelled'.
- * `fetchCurrentMatch` ne lit que ['open','generated','published'] : le match
- * annulé disparaît donc automatiquement de l'app (l'historique reste en base).
+ * Le match quitte la section « À venir » de l'accueil et rejoint les matchs passés
+ * (l'historique reste en base, sa page /m/[id] reste consultable).
  */
 export async function cancelMatch(sb: SupabaseClient, matchId: string): Promise<void> {
   const { data } = await sb.from("team_compositions").select("id").eq("match_id", matchId).limit(1);

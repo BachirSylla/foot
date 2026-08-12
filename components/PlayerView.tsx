@@ -17,17 +17,8 @@ const AVAIL: { key: Availability; label: string; emoji: string; cls: string }[] 
 export function PlayerView() {
   const { match, currentUser, participations, actions } = useStore();
 
-  if (!match) {
-    return (
-      <div className="card p-6 text-center">
-        <p className="text-3xl">📅</p>
-        <h2 className="mt-2 font-display text-lg font-bold">Aucun match programmé</h2>
-        <p className="mt-1 text-sm text-muted">
-          Reviens quand l'organisateur aura créé le prochain match du vendredi.
-        </p>
-      </div>
-    );
-  }
+  // La page du match gère le cas « introuvable » ; ici le match existe toujours.
+  if (!match) return null;
 
   const myPart = currentUser ? participations[currentUser.id] : undefined;
   const myStatus = myPart?.status ?? null;

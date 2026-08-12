@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   Availability,
   GenerationResult,
@@ -9,12 +10,9 @@ import type {
   Player,
   Position,
 } from "./types";
-import {
-  DEMO_MATCH,
-  DEMO_PLAYERS,
-  INITIAL_PARTICIPATIONS,
-  CURRENT_USER_ID,
-} from "./mock";
+import { DEMO_PLAYERS, CURRENT_USER_ID } from "./mock";
+import * as demoStore from "./demoStore";
+import { useDemoState } from "./demoStore";
 import { generateTeams, formationForTeamSize } from "./balance";
 import { getSupabase } from "./supabase";
 import { useAuth } from "./auth";
@@ -26,6 +24,13 @@ export type GenMode = "fun" | "balanced";
 interface CurrentUser {
   id: string;
   name: string;
+}
+
+export interface MatchPatch {
+  title: string;
+  startsAt: string;
+  location: string;
+  maxPlayers: number;
 }
 
 interface Ctx {
@@ -45,17 +50,22 @@ interface Ctx {
   actions: {
     setMyAvailability: (status: Availability) => void;
     setMyPositions: (positions: Position[]) => void;
+    /** Admin : retire la réponse d'un joueur pour ce match (doublon, erreur…). */
+    removeParticipation: (userId: string) => void;
     generate: (genMode: GenMode, teamSize?: number) => void;
     endReveal: () => void;
     publish: () => void;
+    /** Retire la publication mais garde la composition (statut `generated`). */
+    unpublish: () => void;
     resetGeneration: () => void;
-    createMatch: (input: { title: string; startsAt: string; location: string; maxPlayers: number }) => void;
-    updateMatch: (patch: { title: string; startsAt: string; location: string; maxPlayers: number }) => void;
+    updateMatch: (patch: MatchPatch) => void;
     cancelMatch: () => void;
   };
 }
 
 const StoreContext = createContext<Ctx | null>(null);
+
+const NO_PARTICIPATIONS: Record<string, Participation> = {};
 
 function computeAvailable(roster: Player[], parts: Record<string, Participation>): Player[] {
   return roster
@@ -84,24 +94,31 @@ function runGeneration(available: Player[], genMode: GenMode, teamSize?: number)
   });
 }
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Store d'UN match. Toutes les données (réponses, composition, temps réel) sont
+ * scopées sur `matchId` : deux matchs ouverts en même temps ne se mélangent pas.
+ * La création d'un match, elle, vit sur l'accueil (`MatchList`).
+ */
+export function StoreProvider({ matchId, children }: { matchId: string; children: React.ReactNode }) {
   const auth = useAuth();
+  const router = useRouter();
   const mode: "demo" | "live" = auth.configured ? "live" : "demo";
 
+  const demo = useDemoState();
   const [ready, setReady] = useState(mode === "demo");
   const [role, setRole] = useState<Role>("player");
-  const [match, setMatch] = useState<Match | null>(mode === "demo" ? DEMO_MATCH : null);
-  const [roster, setRoster] = useState<Player[]>(mode === "demo" ? DEMO_PLAYERS : []);
-  const [participations, setParticipations] = useState<Record<string, Participation>>(() => {
-    if (mode === "demo") {
-      const m: Record<string, Participation> = {};
-      for (const p of INITIAL_PARTICIPATIONS) m[p.playerId] = p;
-      return m;
-    }
-    return {};
-  });
-  const [result, setResult] = useState<GenerationResult | null>(null);
+  const [liveMatch, setLiveMatch] = useState<Match | null>(null);
+  const [liveRoster, setLiveRoster] = useState<Player[]>([]);
+  const [liveParticipations, setLiveParticipations] = useState<Record<string, Participation>>({});
+  const [liveResult, setLiveResult] = useState<GenerationResult | null>(null);
   const [revealing, setRevealing] = useState(false);
+
+  // Lecture : le mode démo lit le store en mémoire, le mode live l'état chargé.
+  const match = mode === "demo" ? demo.matches.find((m) => m.id === matchId) ?? null : liveMatch;
+  const roster = mode === "demo" ? DEMO_PLAYERS : liveRoster;
+  const participations =
+    mode === "demo" ? demo.participationsByMatch[matchId] ?? NO_PARTICIPATIONS : liveParticipations;
+  const result = mode === "demo" ? demo.resultByMatch[matchId] ?? null : liveResult;
 
   const currentUser: CurrentUser | null =
     mode === "demo"
@@ -112,35 +129,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = mode === "demo" ? true : auth.isAdmin;
 
-  const rosterMap = useMemo(() => {
-    const m: Record<string, Player> = {};
-    for (const p of roster) m[p.id] = p;
-    return m;
-  }, [roster]);
-
   // --- Chargement des données (mode live) ---
   const reloadAll = useCallback(async () => {
     const sb = getSupabase();
     if (!sb) return;
     const r = await repo.fetchRoster(sb);
-    setRoster(r);
+    setLiveRoster(r);
     const rm: Record<string, Player> = {};
     for (const p of r) rm[p.id] = p;
 
-    const m = await repo.fetchCurrentMatch(sb);
-    setMatch(m);
+    const m = await repo.fetchMatchById(sb, matchId);
+    setLiveMatch(m);
     if (m) {
       const parts = await repo.fetchParticipations(sb, m.id);
       const map: Record<string, Participation> = {};
       for (const p of parts) map[p.playerId] = p;
-      setParticipations(map);
+      setLiveParticipations(map);
       const comp = await repo.fetchComposition(sb, m.id, rm);
-      setResult(comp?.result ?? null);
+      setLiveResult(comp?.result ?? null);
     } else {
-      setParticipations({});
-      setResult(null);
+      setLiveParticipations({});
+      setLiveResult(null);
     }
-  }, []);
+  }, [matchId]);
 
   // `auth.profile?.full_name` en dépendance : quand un joueur anonyme choisit son
   // nom, on recharge l'effectif pour qu'il n'apparaisse plus en « Nouveau joueur ».
@@ -156,6 +167,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         await reloadAll();
+      } catch (err) {
+        console.error(err);
       } finally {
         if (active) setReady(true);
       }
@@ -165,12 +178,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, [mode, auth.ready, auth.session, myName, reloadAll]);
 
-  // --- Temps réel (mode live) ---
-  const matchId = match?.id;
+  // --- Temps réel (mode live), scopé sur le match de la page ---
   const reloadRef = useRef(reloadAll);
   reloadRef.current = reloadAll;
   useEffect(() => {
-    if (mode !== "live" || !auth.session || !matchId) return;
+    if (mode !== "live" || !auth.session) return;
     const sb = getSupabase();
     if (!sb) return;
     const channel = sb
@@ -194,16 +206,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         status,
         positions: status === "unavailable" ? [] : prev?.positions ?? [],
       };
-      setParticipations((p) => ({ ...p, [currentUser.id]: next }));
       if (mode === "demo") {
-        setResult(null);
-        setMatch((m) => (m ? { ...m, status: "open" } : m));
+        demoStore.upsertParticipation(matchId, next);
+        demoStore.setResult(matchId, null);
+        demoStore.setStatus(matchId, "open");
       } else {
+        setLiveParticipations((p) => ({ ...p, [currentUser.id]: next }));
         const sb = getSupabase();
-        if (sb && match) repo.upsertParticipation(sb, match.id, currentUser.id, status, next.positions).catch(console.error);
+        if (sb) repo.upsertParticipation(sb, matchId, currentUser.id, status, next.positions).catch(console.error);
       }
     },
-    [currentUser, participations, mode, match]
+    [currentUser, participations, mode, matchId]
   );
 
   const setMyPositions = useCallback(
@@ -212,15 +225,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const prev = participations[currentUser.id];
       const status: Availability = prev?.status === "unavailable" || !prev ? "available" : prev.status;
       const next: Participation = { playerId: currentUser.id, status, positions };
-      setParticipations((p) => ({ ...p, [currentUser.id]: next }));
       if (mode === "demo") {
-        setResult(null);
+        demoStore.upsertParticipation(matchId, next);
+        demoStore.setResult(matchId, null);
       } else {
+        setLiveParticipations((p) => ({ ...p, [currentUser.id]: next }));
         const sb = getSupabase();
-        if (sb && match) repo.upsertParticipation(sb, match.id, currentUser.id, status, positions).catch(console.error);
+        if (sb) repo.upsertParticipation(sb, matchId, currentUser.id, status, positions).catch(console.error);
       }
     },
-    [currentUser, participations, mode, match]
+    [currentUser, participations, mode, matchId]
+  );
+
+  const removeParticipation = useCallback(
+    (userId: string) => {
+      if (mode === "demo") {
+        demoStore.removeParticipation(matchId, userId);
+      } else {
+        setLiveParticipations((p) => {
+          const next = { ...p };
+          delete next[userId];
+          return next;
+        });
+        const sb = getSupabase();
+        if (sb) repo.removeParticipation(sb, matchId, userId).catch(console.error);
+      }
+    },
+    [mode, matchId]
   );
 
   const generate = useCallback(
@@ -228,82 +259,76 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const available = computeAvailable(roster, participations);
       if (available.length < 2) return;
       const res = runGeneration(available, genMode, teamSize);
-      setResult(res);
       setRevealing(true);
-      setMatch((m) => (m ? { ...m, status: "generated" } : m));
-      if (mode === "live") {
+      if (mode === "demo") {
+        demoStore.setResult(matchId, res);
+        demoStore.setStatus(matchId, "generated");
+      } else {
+        setLiveResult(res);
+        setLiveMatch((m) => (m ? { ...m, status: "generated" } : m));
         const sb = getSupabase();
-        if (sb && match) repo.saveComposition(sb, match.id, res, genMode).catch(console.error);
+        if (sb) repo.saveComposition(sb, matchId, res, genMode).catch(console.error);
       }
     },
-    [roster, participations, mode, match]
+    [roster, participations, mode, matchId]
   );
 
   const endReveal = useCallback(() => setRevealing(false), []);
 
-  const publish = useCallback(() => {
-    setMatch((m) => (m ? { ...m, status: "published" } : m));
-    setRevealing(false);
-    if (mode === "live") {
-      const sb = getSupabase();
-      if (sb && match) repo.setMatchStatus(sb, match.id, "published").catch(console.error);
-    }
-  }, [mode, match]);
-
-  const resetGeneration = useCallback(() => {
-    setResult(null);
-    setMatch((m) => (m ? { ...m, status: "open" } : m));
-    if (mode === "live") {
-      const sb = getSupabase();
-      if (sb && match) repo.setMatchStatus(sb, match.id, "open").catch(console.error);
-    }
-  }, [mode, match]);
-
-  const createMatch = useCallback(
-    (input: { title: string; startsAt: string; location: string; maxPlayers: number }) => {
-      if (mode !== "live") return;
-      const sb = getSupabase();
-      if (!sb || !currentUser) return;
-      repo
-        .createMatch(sb, input, currentUser.id)
-        .then((m) => {
-          setMatch(m);
-          setParticipations({});
-          setResult(null);
-        })
-        .catch(console.error);
-    },
-    [mode, currentUser]
-  );
-
-  const updateMatch = useCallback(
-    (patch: { title: string; startsAt: string; location: string; maxPlayers: number }) => {
-      if (!match) return;
-      setMatch((m) => (m ? { ...m, ...patch } : m));
-      if (mode === "live") {
+  /** Change le statut du match (démo : en mémoire, live : optimiste + base). */
+  const applyStatus = useCallback(
+    (status: "open" | "generated" | "published") => {
+      if (mode === "demo") {
+        demoStore.setStatus(matchId, status);
+      } else {
+        setLiveMatch((m) => (m ? { ...m, status } : m));
         const sb = getSupabase();
-        if (sb) repo.updateMatch(sb, match.id, patch).catch(console.error);
+        if (sb) repo.setMatchStatus(sb, matchId, status).catch(console.error);
       }
     },
-    [mode, match]
+    [mode, matchId]
+  );
+
+  const publish = useCallback(() => {
+    applyStatus("published");
+    setRevealing(false);
+  }, [applyStatus]);
+
+  const unpublish = useCallback(() => {
+    applyStatus("generated");
+    setRevealing(false);
+  }, [applyStatus]);
+
+  const resetGeneration = useCallback(() => {
+    if (mode === "demo") demoStore.setResult(matchId, null);
+    else setLiveResult(null);
+    applyStatus("open");
+  }, [mode, matchId, applyStatus]);
+
+  const updateMatch = useCallback(
+    (patch: MatchPatch) => {
+      if (mode === "demo") {
+        demoStore.updateMatch(matchId, patch);
+      } else {
+        setLiveMatch((m) => (m ? { ...m, ...patch } : m));
+        const sb = getSupabase();
+        if (sb) repo.updateMatch(sb, matchId, patch).catch(console.error);
+      }
+    },
+    [mode, matchId]
   );
 
   const cancelMatch = useCallback(() => {
-    if (!match) return;
-    if (mode === "live") {
-      const sb = getSupabase();
-      if (sb) repo.cancelMatch(sb, match.id).catch(console.error);
-      setMatch(null);
-      setParticipations({});
-      setResult(null);
+    if (mode === "demo") {
+      demoStore.cancelMatch(matchId);
     } else {
-      // Démo : pas de base, on repart d'un match ouvert et vide.
-      setMatch({ ...DEMO_MATCH, status: "open" });
-      setParticipations({});
-      setResult(null);
+      const sb = getSupabase();
+      if (sb) repo.cancelMatch(sb, matchId).catch(console.error);
     }
     setRevealing(false);
-  }, [mode, match]);
+    // Le match quitte les « à venir » : on renvoie l'organisateur sur la liste.
+    router.push("/");
+  }, [mode, matchId, router]);
 
   const value = useMemo<Ctx>(() => {
     const available = computeAvailable(roster, participations);
@@ -329,14 +354,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       result,
       revealing,
       actions: {
-        setMyAvailability, setMyPositions, generate, endReveal, publish, resetGeneration,
-        createMatch, updateMatch, cancelMatch,
+        setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
+        publish, unpublish, resetGeneration, updateMatch, cancelMatch,
       },
     };
   }, [
     ready, mode, currentUser, isAdmin, role, match, roster, participations, result, revealing,
-    setMyAvailability, setMyPositions, generate, endReveal, publish, resetGeneration,
-    createMatch, updateMatch, cancelMatch,
+    setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
+    publish, unpublish, resetGeneration, updateMatch, cancelMatch,
   ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

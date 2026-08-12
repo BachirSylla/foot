@@ -1,30 +1,16 @@
 "use client";
 
 import { useStore } from "@/lib/store";
+import { STATUS_LABEL, STATUS_TONE, formatMatchDate } from "@/lib/matchDisplay";
 import { StatPill } from "./ui";
-
-const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
-const MONTHS = [
-  "janvier", "février", "mars", "avril", "mai", "juin",
-  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-];
-
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  const day = DAYS[d.getDay()];
-  const time = `${d.getHours()}h${String(d.getMinutes()).padStart(2, "0")}`;
-  return { day, dayNum: d.getDate(), month: MONTHS[d.getMonth()], time };
-}
 
 export function MatchHero() {
   const { match, counts } = useStore();
   if (!match) return null;
-  const { day, dayNum, month, time } = formatDate(match.startsAt);
+  const { day, dayNum, month, time } = formatMatchDate(match.startsAt);
 
-  const statusLabel =
-    match.status === "published" ? "Équipes publiées" : match.status === "generated" ? "Composition prête" : "Inscriptions ouvertes";
-  const statusTone =
-    match.status === "published" ? "text-lime" : match.status === "generated" ? "text-cyan" : "text-slate-300";
+  const statusLabel = STATUS_LABEL[match.status];
+  const statusTone = STATUS_TONE[match.status];
 
   return (
     <section className="card pitch-lines relative overflow-hidden p-5">

@@ -1,0 +1,132 @@
+"use client";
+
+// Base de données du mode démo (sans `.env.local`) : 100% en mémoire, mais
+// multi-matchs comme le mode live. Un store module-level exposé via
+// `useSyncExternalStore` : l'accueil (`MatchList`) et la page d'un match
+// (`StoreProvider`) lisent la même source et se re-rendent ensemble.
+
+import { useSyncExternalStore } from "react";
+import type { GenerationResult, Match, MatchStatus, Participation } from "./types";
+import { DEMO_MATCH, INITIAL_PARTICIPATIONS } from "./mock";
+
+export interface DemoState {
+  matches: Match[];
+  participationsByMatch: Record<string, Record<string, Participation>>;
+  resultByMatch: Record<string, GenerationResult | null>;
+}
+
+export interface MatchInput {
+  title: string;
+  startsAt: string;
+  location: string;
+  maxPlayers: number;
+}
+
+function initialState(): DemoState {
+  const parts: Record<string, Participation> = {};
+  for (const p of INITIAL_PARTICIPATIONS) parts[p.playerId] = p;
+  return {
+    matches: [DEMO_MATCH],
+    participationsByMatch: { [DEMO_MATCH.id]: parts },
+    resultByMatch: {},
+  };
+}
+
+let state: DemoState = initialState();
+let nextId = 2;
+const listeners = new Set<() => void>();
+
+function commit(next: DemoState) {
+  state = next;
+  for (const l of listeners) l();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Snapshot stable : la référence ne change que sur une vraie mutation. */
+function getSnapshot(): DemoState {
+  return state;
+}
+
+/** S'abonne au store démo. Le même snapshot est servi au rendu serveur. */
+export function useDemoState(): DemoState {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+// --- Lecture ---------------------------------------------------------------
+
+/** Matchs du plus récent au plus ancien (même ordre que `repo.listMatches`). */
+export function listMatches(): Match[] {
+  return [...state.matches].sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+}
+
+export function getMatch(id: string): Match | null {
+  return state.matches.find((m) => m.id === id) ?? null;
+}
+
+export function getParticipations(matchId: string): Record<string, Participation> {
+  return state.participationsByMatch[matchId] ?? {};
+}
+
+export function getResult(matchId: string): GenerationResult | null {
+  return state.resultByMatch[matchId] ?? null;
+}
+
+// --- Écriture --------------------------------------------------------------
+
+export function upsertParticipation(matchId: string, participation: Participation): void {
+  const forMatch = { ...getParticipations(matchId), [participation.playerId]: participation };
+  commit({
+    ...state,
+    participationsByMatch: { ...state.participationsByMatch, [matchId]: forMatch },
+  });
+}
+
+export function removeParticipation(matchId: string, playerId: string): void {
+  const forMatch = { ...getParticipations(matchId) };
+  delete forMatch[playerId];
+  commit({
+    ...state,
+    participationsByMatch: { ...state.participationsByMatch, [matchId]: forMatch },
+  });
+}
+
+export function setResult(matchId: string, result: GenerationResult | null): void {
+  commit({ ...state, resultByMatch: { ...state.resultByMatch, [matchId]: result } });
+}
+
+export function setStatus(matchId: string, status: MatchStatus): void {
+  commit({
+    ...state,
+    matches: state.matches.map((m) => (m.id === matchId ? { ...m, status } : m)),
+  });
+}
+
+export function updateMatch(matchId: string, patch: MatchInput): void {
+  commit({
+    ...state,
+    matches: state.matches.map((m) => (m.id === matchId ? { ...m, ...patch } : m)),
+  });
+}
+
+export function createMatch(input: MatchInput): Match {
+  const match: Match = { id: `demo-${nextId++}`, ...input, status: "open" };
+  commit({
+    ...state,
+    matches: [...state.matches, match],
+    participationsByMatch: { ...state.participationsByMatch, [match.id]: {} },
+    resultByMatch: { ...state.resultByMatch, [match.id]: null },
+  });
+  return match;
+}
+
+/** Comme en live : le match passe en `cancelled` et rejoint les matchs passés. */
+export function cancelMatch(matchId: string): void {
+  setResult(matchId, null);
+  setStatus(matchId, "cancelled");
+}

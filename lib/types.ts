@@ -79,7 +79,12 @@ export interface Participation {
   positions: Position[];
 }
 
-export type MatchStatus = "open" | "generated" | "published";
+/**
+ * Statuts portés par l'app. `finished` / `cancelled` ne sont pas produits par
+ * l'UI de tirage mais existent en base : l'accueil s'en sert pour séparer les
+ * matchs « à venir » des « passés ».
+ */
+export type MatchStatus = "open" | "generated" | "published" | "finished" | "cancelled";
 
 export interface Match {
   id: string;

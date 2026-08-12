@@ -9,7 +9,8 @@ import "@fontsource/space-grotesk/600.css";
 import "@fontsource/space-grotesk/700.css";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
-import { StoreProvider } from "@/lib/store";
+import { AuthGate } from "@/components/AuthGate";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { PWARegister } from "@/components/PWARegister";
 
 export const metadata: Metadata = {
@@ -31,8 +32,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr">
       <body className="min-h-screen font-sans">
+        {/* La garde d'auth est globale : elle protège l'accueil comme /m/[id],
+            en conservant l'URL d'arrivée (lien / QR d'un match précis). */}
         <AuthProvider>
-          <StoreProvider>{children}</StoreProvider>
+          <ConfirmProvider>
+            <AuthGate>{children}</AuthGate>
+          </ConfirmProvider>
         </AuthProvider>
         <PWARegister />
       </body>

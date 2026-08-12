@@ -7,8 +7,16 @@ Next.js (PWA) + Supabase, design « Sport dark néon ».
 
 ```
 teammix/
-├── app/                 # Next.js App Router (layout, page, styles)
-├── components/          # UI (écrans joueur/admin, tirage, équipes…)
+├── app/
+│   ├── layout.tsx       # AuthProvider + AuthGate (garde globale)
+│   ├── page.tsx         # Accueil : la liste de tous les matchs
+│   └── m/[id]/page.tsx  # Un match : StoreProvider(matchId) + MatchDetail
+├── components/          # UI (liste, écrans joueur/admin, tirage, équipes…)
+│   ├── MatchList.tsx    # Accueil : à venir / passés + « Nouveau match » (admin)
+│   ├── MatchCard.tsx    # Une carte de match (lien vers /m/{id})
+│   ├── MatchDetail.tsx  # Contenu d'un match (joueur ↔ organisateur)
+│   ├── AuthGate.tsx     # Garde d'auth, indépendante des données
+│   └── Header.tsx       # Logo (retour accueil) + nom + déconnexion
 ├── lib/                 # Logique + données
 │   ├── balance.ts       # Moteur d'équilibrage (source de vérité)
 │   ├── balance.test.ts  # Tests du moteur (Vitest)
@@ -16,7 +24,9 @@ teammix/
 │   ├── supabase.ts      # Client Supabase
 │   ├── auth.tsx         # Session + rôle
 │   ├── repo.ts          # Requêtes (matchs, participations, compositions)
-│   ├── store.tsx        # Store unifié démo/live + temps réel
+│   ├── store.tsx        # Store d'UN match (démo/live) + temps réel
+│   ├── demoStore.ts     # Base en mémoire du mode démo (multi-matchs)
+│   ├── matchDisplay.ts  # Libellés de statut + format de date
 │   └── mock.ts          # Données de démo
 ├── supabase/
 │   ├── schema.sql       # Tables + RLS + realtime + trigger (à exécuter en 1er)
@@ -34,11 +44,25 @@ npm test         # tests du moteur (Vitest)
 npm run build    # build de production
 ```
 
+## Les routes
+- `/` — **accueil** : tous les matchs, « À venir » puis « Passés » (repliable). Chaque
+  carte montre le statut et le nombre de présents ; l'admin y crée un match.
+- `/m/{id}` — **un match** : la réponse du joueur, qui vient, et côté organisateur le
+  QR **de ce match**, le tirage, la publication, la modification / l'annulation.
+
+Plusieurs matchs peuvent être ouverts en même temps (mardi **et** vendredi) : les
+réponses, la composition et le QR sont scopés par match.
+
 ## Le parcours de démo
-1. **Vue Joueur** — réponds au match (Je joue / Peut-être / Absent), choisis 2 postes max.
-2. Bascule sur **Vue Admin** (en haut à droite).
-3. Choisis un mode (Équilibré / Rapide) et **Génère les équipes** → animation de tirage.
-4. **Publie** : la composition se verrouille. Reviens en Vue Joueur → les équipes sont visibles par tous.
+1. **Accueil** — la liste des matchs. Ouvre-en un.
+2. **Vue Joueur** — réponds au match (Je joue / Peut-être / Absent), choisis 2 postes max.
+3. Bascule sur **Vue Admin** (en haut à droite).
+4. Choisis un mode (Équilibré / Rapide) et **Génère les équipes** → animation de tirage.
+5. **Publie** : la composition se verrouille. Reviens en Vue Joueur → les équipes sont visibles par tous.
+6. Depuis l'accueil, **➕ Nouveau match** en crée un second, indépendant du premier.
+
+> Le mode démo garde tout en mémoire (`lib/demoStore.ts`) : recharger la page
+> remet la démo à son état initial.
 
 ## Ce qui est branché
 - Le **moteur d'équilibrage** (`lib/balance.ts`, couvert par `lib/balance.test.ts`) tourne côté client.
@@ -77,20 +101,32 @@ L'app détecte automatiquement le mode :
 > anonymes. Elle est idempotente et déjà incluse dans `schema.sql` pour une base neuve.
 
 ### Le parcours en live
-- **Joueur** : l'organisateur partage le lien / QR (carte « Inviter les joueurs »,
-  bouton WhatsApp). Le joueur ouvre le lien → **Rejoindre le match** → il saisit son
-  nom **une seule fois** (la session Supabase est persistée sur l'appareil) → il répond.
-- **Organisateur** : compte email/mot de passe classique. Il crée le match, partage
-  le QR, peut **modifier** (date, lieu, effectif visé) ou **annuler** le match
-  (statut `cancelled` : il disparaît de l'app), puis génère et publie les équipes.
+- **Joueur** : l'organisateur partage le lien / QR **d'un match** (carte « Inviter les
+  joueurs », bouton WhatsApp) — il pointe sur `/m/{id}`. Le joueur ouvre le lien →
+  **Rejoindre le match** → il saisit son nom **une seule fois** (la session Supabase
+  est persistée sur l'appareil) → il répond, sur ce match précis. L'URL d'arrivée est
+  conservée pendant l'inscription : il atterrit bien sur le match scanné.
+- **Organisateur** : compte email/mot de passe classique. Depuis l'accueil il crée
+  autant de matchs qu'il veut. Sur la page d'un match, il partage le QR, peut
+  **modifier** (date, lieu, effectif visé) ou **annuler** le match (statut `cancelled` :
+  il bascule dans les matchs passés), puis génère et publie les équipes — et peut
+  **déverrouiller** une publication (la compo est conservée, mais redevient invisible
+  pour les joueurs jusqu'à republication).
 
 ### Comment ça marche
 - `lib/supabase.ts` — client navigateur (clé anon, publique).
 - `lib/auth.tsx` — session + profil + rôle (email/mot de passe **ou** anonyme via
   `joinAsPlayer()` / `setDisplayName()`).
-- `lib/repo.ts` — toutes les requêtes (matchs, participations, compositions).
-- `lib/store.tsx` — un seul store qui bascule démo/live et gère le **temps réel**
-  (les réponses des collègues et la publication des équipes arrivent en direct).
+- `lib/repo.ts` — toutes les requêtes (liste des matchs, un match, participations,
+  compositions).
+- `lib/store.tsx` — le store d'**un** match (`<StoreProvider matchId>`), démo ou live,
+  avec le **temps réel** scopé sur ce match (les réponses des collègues et la
+  publication des équipes arrivent en direct). L'accueil, lui, s'abonne à la table
+  `matches` pour voir apparaître les matchs créés par d'autres.
+
+> Aucune migration n'est nécessaire pour le multi-matchs : la table `matches`
+> acceptait déjà plusieurs lignes et la RLS existante (matchs et participations
+> lisibles par tout utilisateur connecté) suffit.
 
 ### Sécurité
 La clé **anon** est publique par conception (elle vit dans le navigateur) : la sécurité

@@ -50,6 +50,21 @@ export function Avatar({
   );
 }
 
+/** Écran d'attente (chargement de la session ou d'un match). */
+export function Splash() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="relative grid h-16 w-16 place-items-center">
+          <div className="absolute inset-0 animate-spin rounded-full border-2 border-lime/20 border-t-lime" />
+          <span className="text-2xl">⚽</span>
+        </div>
+        <span className="text-sm text-muted">Chargement…</span>
+      </div>
+    </div>
+  );
+}
+
 export function StatPill({
   value,
   label,

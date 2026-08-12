@@ -4,7 +4,7 @@
 // Un cache-first sur la page « / » servirait indéfiniment l'ancien HTML, qui
 // référence les anciens chunks JS : un déploiement n'arriverait jamais jusqu'au
 // navigateur.
-const CACHE = "teammix-v2";
+const CACHE = "teammix-v3";
 const SHELL = ["/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -29,15 +29,18 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Pages : réseau d'abord, cache en secours (hors-ligne).
+  // Chaque page est cachée sous SA propre URL : l'app a plusieurs routes
+  // (« / » et « /m/{id} »), les stocker toutes sous « / » servirait la mauvaise
+  // page hors-ligne. En dernier recours on retombe sur l'accueil.
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("/", copy));
+          caches.open(CACHE).then((c) => c.put(request, copy));
           return res;
         })
-        .catch(() => caches.match("/").then((c) => c || caches.match(request)))
+        .catch(() => caches.match(request).then((c) => c || caches.match("/")))
     );
     return;
   }
