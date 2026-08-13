@@ -28,7 +28,9 @@ import type {
   AssignmentRow,
   StandingsViewRow,
   TopScorersViewRow,
+  PairTogetherViewRow,
 } from "./database.types";
+import { pairKey } from "./balance";
 import { sortScorers, sortStandings } from "./standings";
 
 /**
@@ -453,6 +455,25 @@ export async function fetchStandings(sb: SupabaseClient): Promise<StandingRow[]>
       points: r.points,
     }))
   );
+}
+
+/**
+ * Historique de rotation : combien de fois chaque paire de joueurs a été dans la
+ * MÊME équipe, sur les matchs terminés (vue `pair_together_counts`). Sert de
+ * `rotationHistory` au moteur, qui pénalise les paires habituelles — d'où la
+ * clé produite par `pairKey`, son format à lui.
+ */
+export async function fetchPairTogether(sb: SupabaseClient): Promise<Record<string, number>> {
+  const { data, error } = await sb
+    .from("pair_together_counts")
+    .select("user_low, user_high, times");
+  if (error) throw error;
+  const out: Record<string, number> = {};
+  // `count()` est un bigint : PostgREST le rend en chaîne, d'où le Number().
+  for (const r of data as PairTogetherViewRow[]) {
+    out[pairKey(r.user_low, r.user_high)] = Number(r.times);
+  }
+  return out;
 }
 
 export async function createMatch(

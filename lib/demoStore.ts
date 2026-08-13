@@ -17,6 +17,7 @@ import type {
   StandingRow,
 } from "./types";
 import { DEMO_MATCH, DEMO_PLAYERS, INITIAL_PARTICIPATIONS } from "./mock";
+import { pairKey } from "./balance";
 import {
   aggregateTopScorers,
   buildStandings,
@@ -160,6 +161,30 @@ export function getTopScorers(): ScorerRow[] {
     }
   }
   return aggregateTopScorers(entries);
+}
+
+/**
+ * Équivalent en mémoire de la vue SQL `pair_together_counts` : combien de fois
+ * chaque paire de joueurs a été dans la MÊME équipe, sur les matchs terminés.
+ * La clé est celle du moteur (`pairKey`), qui consomme cette map en rotation.
+ */
+export function getPairTogether(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const match of state.matches) {
+    if (match.status !== "finished") continue;
+    const composition = state.resultByMatch[match.id];
+    if (!composition) continue;
+    for (const team of [composition.teamA, composition.teamB]) {
+      const ids = team.players.map(({ player }) => player.id);
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const key = pairKey(ids[i], ids[j]);
+          counts[key] = (counts[key] ?? 0) + 1;
+        }
+      }
+    }
+  }
+  return counts;
 }
 
 // --- Écriture --------------------------------------------------------------

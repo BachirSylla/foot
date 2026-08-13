@@ -88,6 +88,57 @@ test("rotation : sépare les joueurs qui ont trop joué ensemble", () => {
   expect(a.includes("a") && a.includes("b")).toBe(false);
 });
 
+// Le mode « Équilibré » de l'app ajoute la rotation au barème et remonte le
+// poids des postes — miroir de BALANCED_WEIGHTS dans lib/store.tsx (changer les
+// deux ensemble). Le score du moteur est une somme pondérée : c'est l'écart
+// entre ces deux poids, et lui seul, qui garantit que la couverture des postes
+// ne s'échange jamais contre de la rotation.
+const APP_BALANCED = { positions: 100, rotation: 0.5 };
+
+test("rotation en mode équilibré : sépare les habitués à postes équivalents", () => {
+  const four: Player[] = [p("a", ["MID"], 3), p("b", ["MID"], 3), p("c", ["MID"], 3), p("d", ["MID"], 3)];
+  const res = generateTeams(four, {
+    mode: "balanced",
+    weights: APP_BALANCED,
+    rotationHistory: { [pairKey("a", "b")]: 10 },
+  });
+  const a = ids(res.teamA);
+  expect(a.includes("a") && a.includes("b")).toBe(false);
+});
+
+test("couvrir un poste l'emporte toujours sur la rotation", () => {
+  // Deux gardiens pour deux équipes : les séparer est la SEULE façon de couvrir
+  // le poste partout. On pénalise lourdement chaque paire (gardien + joueur de
+  // champ) pour que la rotation, elle, préfère empiler les deux gardiens dans la
+  // même équipe — et on vérifie qu'elle n'y arrive pas.
+  const six: Player[] = [
+    p("gk1", ["GK"], 3), p("gk2", ["GK"], 3),
+    p("d1", ["DEF"], 3), p("d2", ["DEF"], 3),
+    p("f1", ["FWD"], 3), p("f2", ["FWD"], 3),
+  ];
+  const formation = { GK: 1, DEF: 1, MID: 0, FWD: 1 };
+  const rotationHistory: Record<string, number> = {};
+  for (const gk of ["gk1", "gk2"]) {
+    for (const out of ["d1", "d2", "f1", "f2"]) rotationHistory[pairKey(gk, out)] = 50;
+  }
+
+  const res = generateTeams(six, { mode: "balanced", formation, weights: APP_BALANCED, rotationHistory });
+  const gkA = res.teamA.players.filter((x) => x.assignedPosition === "GK").length;
+  const gkB = res.teamB.players.filter((x) => x.assignedPosition === "GK").length;
+  expect([gkA, gkB]).toEqual([1, 1]);
+  expect(res.breakdown.positions).toBe(0);
+
+  // Contrôle : avec le poids d'origine (postes 1.5), la même situation faisait
+  // céder les postes. C'est bien la surcharge de poids qui fait la garantie.
+  const weak = generateTeams(six, {
+    mode: "balanced",
+    formation,
+    weights: { rotation: 0.5 },
+    rotationHistory,
+  });
+  expect(weak.breakdown.positions).toBeGreaterThan(0);
+});
+
 test("mode rapide (snake draft) : équilibré", () => {
   const res = generateTeams(ten, { mode: "fast" });
   expect(everyone(res).length).toBe(10);

@@ -83,6 +83,13 @@ export interface TopScorersViewRow {
   matches: number;
 }
 
+/** Vue `pair_together_counts` (agrégat). `times` est un `count()` bigint. */
+export interface PairTogetherViewRow {
+  user_low: string;
+  user_high: string;
+  times: number | string;
+}
+
 export interface AssignmentRow {
   id: string;
   composition_id: string;

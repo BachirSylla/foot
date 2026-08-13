@@ -308,6 +308,34 @@ group by g.user_id;
 grant select on top_scorers to authenticated, anon;
 
 -- ===========================================================================
+-- Rotation des coéquipiers (V2) : combien de fois chaque paire de joueurs a été
+-- DANS LA MÊME équipe, sur les matchs TERMINÉS.
+--
+-- Alimente `rotationHistory` du moteur (lib/balance.ts), qui pénalise les paires
+-- habituelles en mode « Équilibré ». Calculé à la volée plutôt qu'incrémenté :
+-- un compteur dériverait à chaque republication ou réouverture d'un match.
+-- La table `pair_history` ci-dessus reste donc INUTILISÉE.
+--
+-- `a1.user_id < a2.user_id` : une seule ligne par paire, et pas de self-paire.
+-- Comme les autres vues d'agrégats, elle reste en `security_definer`.
+-- ===========================================================================
+create or replace view pair_together_counts as
+select
+  a1.user_id as user_low,
+  a2.user_id as user_high,
+  count(*)   as times
+from team_assignments a1
+join team_assignments a2
+  on a1.composition_id = a2.composition_id
+ and a1.team           = a2.team
+ and a1.user_id        < a2.user_id
+join team_compositions c on c.id = a1.composition_id
+join matches m on m.id = c.match_id and m.status = 'finished'
+group by a1.user_id, a2.user_id;
+
+grant select on pair_together_counts to authenticated, anon;
+
+-- ===========================================================================
 -- Temps réel : publier les tables suivies par l'app (dispo, compositions, score).
 -- Sans ça, les souscriptions realtime côté client ne reçoivent rien.
 -- ===========================================================================

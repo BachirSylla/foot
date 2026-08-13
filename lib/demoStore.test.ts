@@ -1,9 +1,14 @@
-// Parcours du mode démo pour les buteurs — Vitest (`npm test`).
-// Le store démo est l'équivalent en mémoire de la vue SQL `top_scorers` : ce
-// test vérifie surtout la règle de statut (un match rouvert ne compte plus) et
-// le fait qu'une saisie REMPLACE la précédente, comme `repo.saveGoals`.
+// Parcours du mode démo — Vitest (`npm test`).
+// Le store démo est l'équivalent en mémoire des vues SQL `top_scorers` et
+// `pair_together_counts` : ces tests vérifient surtout la règle de statut (un
+// match rouvert ne compte plus) et le fait qu'une saisie de buts REMPLACE la
+// précédente, comme `repo.saveGoals`.
+//
+// ATTENTION : le store démo est un singleton de module, l'état persiste d'un
+// test à l'autre. Chaque test travaille donc sur ses propres matchs/joueurs.
 import { test, expect } from "vitest";
 import * as demoStore from "./demoStore";
+import { pairKey } from "./balance";
 import type { GenerationResult } from "./types";
 
 const compo: GenerationResult = {
@@ -61,4 +66,53 @@ test("parcours démo : saisie des buts -> classement buteurs -> réouverture", (
   // Une nouvelle saisie REMPLACE la précédente (pas d'accumulation).
   demoStore.setGoals("demo-1", [{ userId: "yoro", goals: 1 }]);
   expect(demoStore.getTopScorers().map((r) => [r.userId, r.goals])).toEqual([["yoro", 1]]);
+});
+
+/** Une composition minimale : les ids servent aussi de noms. */
+function compoOf(teamA: string[], teamB: string[]): GenerationResult {
+  const team = (ids: string[]) => ({
+    players: ids.map((id) => ({
+      player: { id, name: id, positions: ["MID" as const] },
+      assignedPosition: "MID" as const,
+    })),
+    totalLevel: 0,
+  });
+  return {
+    teamA: team(teamA),
+    teamB: team(teamB),
+    score: 0,
+    breakdown: { level: 0, tiers: 0, positions: 0, rotation: 0 },
+    warnings: [],
+  };
+}
+
+function playedTogether(): (a: string, b: string) => number | undefined {
+  const counts = demoStore.getPairTogether();
+  return (a, b) => counts[pairKey(a, b)];
+}
+
+test("rotation démo : compte les paires des matchs terminés seulement", () => {
+  const input = { title: "Rotation", startsAt: "2026-09-01T18:00:00", location: "Terrain", maxPlayers: 10 };
+  const m1 = demoStore.createMatch(input);
+  demoStore.setResult(m1.id, compoOf(["r1", "r2"], ["r3", "r4"]));
+
+  // Compo tirée mais match pas encore joué : rien ne compte.
+  expect(playedTogether()("r1", "r2")).toBeUndefined();
+
+  demoStore.setStatus(m1.id, "finished");
+  const after = playedTogether();
+  expect(after("r1", "r2")).toBe(1);
+  expect(after("r3", "r4")).toBe(1);
+  // Adversaires, pas coéquipiers : hors sujet pour la rotation.
+  expect(after("r1", "r3")).toBeUndefined();
+
+  // Deuxième match ensemble : la paire pèse plus lourd.
+  const m2 = demoStore.createMatch(input);
+  demoStore.setResult(m2.id, compoOf(["r1", "r2"], ["r3", "r4"]));
+  demoStore.setStatus(m2.id, "finished");
+  expect(playedTogether()("r1", "r2")).toBe(2);
+
+  // Réouverture : le match sort du calcul, comme pour les points et les buts.
+  demoStore.setStatus(m2.id, "published");
+  expect(playedTogether()("r1", "r2")).toBe(1);
 });

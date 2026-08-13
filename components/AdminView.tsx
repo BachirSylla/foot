@@ -61,7 +61,7 @@ export function AdminView() {
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2.5">
-            <ModeCard active={genMode === "balanced"} onClick={() => setGenMode("balanced")} emoji="🎯" title="Équilibré" desc="Postes couverts, équipes cohérentes." />
+            <ModeCard active={genMode === "balanced"} onClick={() => setGenMode("balanced")} emoji="🎯" title="Équilibré" desc="Postes couverts, équipes cohérentes — et qui tournent d'un match à l'autre." />
             <ModeCard active={genMode === "fun"} onClick={() => setGenMode("fun")} emoji="🎲" title="Rapide / fun" desc="Tirage express bien réparti." />
           </div>
 

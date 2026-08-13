@@ -86,6 +86,21 @@ const StoreContext = createContext<Ctx | null>(null);
 
 const NO_PARTICIPATIONS: Record<string, Participation> = {};
 const NO_GOALS: Record<string, number> = {};
+const NO_PAIRS: Record<string, number> = {};
+
+/**
+ * Poids du mode « Équilibré ». Le barème du moteur est une somme pondérée, pas
+ * un ordre lexicographique : un poste non couvert doit donc coûter assez cher
+ * pour qu'aucun historique de rotation ne puisse le « racheter ».
+ *
+ * À 100 contre 0.5, il faudrait un écart de rotation de 200 entre deux
+ * répartitions pour sacrifier un poste — hors d'atteinte. La rotation reste ce
+ * qu'elle doit être : un DÉPARTAGE entre compositions équivalentes.
+ *
+ * Le moteur n'est pas modifié, ces poids ne surchargent que cet appel
+ * (`WEIGHTS_BY_MODE.balanced` reste postes 1.5 / rotation 0).
+ */
+const BALANCED_WEIGHTS = { positions: 100, rotation: 0.5 } as const;
 
 function computeAvailable(roster: Player[], parts: Record<string, Participation>): Player[] {
   return roster
@@ -105,12 +120,26 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function runGeneration(available: Player[], genMode: GenMode, teamSize?: number): GenerationResult {
+function runGeneration(
+  available: Player[],
+  genMode: GenMode,
+  pairHistory: Record<string, number>,
+  teamSize?: number
+): GenerationResult {
   const size = teamSize ?? Math.floor(available.length / 2);
   const formation = formationForTeamSize(Math.max(1, size));
+
+  // « Rapide / fun » reste un tirage pur : le snake draft ne cherche pas à
+  // séparer les habitués, c'est ce qui fait sa surprise.
+  if (genMode === "fun") {
+    return generateTeams(shuffle(available), { mode: "fast", formation });
+  }
+
   return generateTeams(shuffle(available), {
-    mode: genMode === "fun" ? "fast" : "balanced",
+    mode: "balanced",
     formation,
+    rotationHistory: pairHistory,
+    weights: { ...BALANCED_WEIGHTS },
   });
 }
 
@@ -133,6 +162,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
   const [liveResult, setLiveResult] = useState<GenerationResult | null>(null);
   const [liveScore, setLiveScore] = useState<MatchScore | null>(null);
   const [liveGoals, setLiveGoals] = useState<Record<string, number>>(NO_GOALS);
+  const [livePairHistory, setLivePairHistory] = useState<Record<string, number>>(NO_PAIRS);
   const [revealing, setRevealing] = useState(false);
 
   // Lecture : le mode démo lit le store en mémoire, le mode live l'état chargé.
@@ -143,6 +173,11 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
   const result = mode === "demo" ? demo.resultByMatch[matchId] ?? null : liveResult;
   const score = mode === "demo" ? demo.scoreByMatch[matchId] ?? null : liveScore;
   const goals = mode === "demo" ? demo.goalsByMatch[matchId] ?? NO_GOALS : liveGoals;
+
+  // Historique de rotation. En démo il se recalcule à chaque mutation du store
+  // en mémoire (`reloadAll` ne tourne qu'en live), comme le classement.
+  const demoPairHistory = useMemo(() => demoStore.getPairTogether(), [demo]);
+  const pairHistory = mode === "demo" ? demoPairHistory : livePairHistory;
 
   const currentUser: CurrentUser | null =
     mode === "demo"
@@ -182,6 +217,11 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       setLiveScore(null);
       setLiveGoals(NO_GOALS);
     }
+
+    // Historique de rotation : global (tous les matchs terminés), pas scopé sur
+    // celui de la page. Il se rafraîchit tout seul quand un match se termine,
+    // puisque le temps réel rappelle `reloadAll`.
+    setLivePairHistory(await repo.fetchPairTogether(sb));
   }, [matchId]);
 
   // `auth.profile?.full_name` en dépendance : quand un joueur anonyme choisit son
@@ -291,7 +331,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
     (genMode: GenMode, teamSize?: number) => {
       const available = computeAvailable(roster, participations);
       if (available.length < 2) return;
-      const res = runGeneration(available, genMode, teamSize);
+      const res = runGeneration(available, genMode, pairHistory, teamSize);
       setRevealing(true);
       if (mode === "demo") {
         demoStore.setResult(matchId, res);
@@ -303,7 +343,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
         if (sb) repo.saveComposition(sb, matchId, res, genMode).catch(console.error);
       }
     },
-    [roster, participations, mode, matchId]
+    [roster, participations, pairHistory, mode, matchId]
   );
 
   const endReveal = useCallback(() => setRevealing(false), []);
