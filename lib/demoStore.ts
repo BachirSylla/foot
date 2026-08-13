@@ -12,10 +12,17 @@ import type {
   MatchScore,
   MatchStatus,
   Participation,
+  PlayerGoals,
+  ScorerRow,
   StandingRow,
 } from "./types";
 import { DEMO_MATCH, DEMO_PLAYERS, INITIAL_PARTICIPATIONS } from "./mock";
-import { buildStandings, type StandingEntry } from "./standings";
+import {
+  aggregateTopScorers,
+  buildStandings,
+  type ScorerEntry,
+  type StandingEntry,
+} from "./standings";
 
 export interface DemoState {
   matches: Match[];
@@ -24,6 +31,8 @@ export interface DemoState {
   resultByMatch: Record<string, GenerationResult | null>;
   /** Le SCORE final par match. Distinct de la compo, comme dans le store. */
   scoreByMatch: Record<string, MatchScore>;
+  /** Les buteurs par match : `{ [matchId]: { [userId]: buts } }`. */
+  goalsByMatch: Record<string, Record<string, number>>;
 }
 
 export interface MatchInput {
@@ -41,6 +50,7 @@ function initialState(): DemoState {
     participationsByMatch: { [DEMO_MATCH.id]: parts },
     resultByMatch: {},
     scoreByMatch: {},
+    goalsByMatch: {},
   };
 }
 
@@ -93,6 +103,12 @@ export function getScore(matchId: string): MatchScore | null {
   return state.scoreByMatch[matchId] ?? null;
 }
 
+const NO_GOALS: Record<string, number> = {};
+
+export function getGoals(matchId: string): Record<string, number> {
+  return state.goalsByMatch[matchId] ?? NO_GOALS;
+}
+
 /**
  * Équivalent en mémoire de la vue SQL `player_standings` : on part des matchs
  * terminés qui ont un score, et des joueurs réellement placés dans une équipe
@@ -122,6 +138,30 @@ export function getStandings(): StandingRow[] {
   return buildStandings(entries, names);
 }
 
+/**
+ * Équivalent en mémoire de la vue SQL `top_scorers` : seuls les matchs terminés
+ * comptent, et un joueur rouvert sort du classement comme pour les points.
+ */
+export function getTopScorers(): ScorerRow[] {
+  const names: Record<string, string> = {};
+  for (const p of DEMO_PLAYERS) names[p.id] = p.name;
+  for (const composition of Object.values(state.resultByMatch)) {
+    if (!composition) continue;
+    for (const { player } of [...composition.teamA.players, ...composition.teamB.players]) {
+      names[player.id] = player.name;
+    }
+  }
+
+  const entries: ScorerEntry[] = [];
+  for (const match of state.matches) {
+    if (match.status !== "finished") continue;
+    for (const [userId, goals] of Object.entries(getGoals(match.id))) {
+      entries.push({ userId, name: names[userId] ?? "Joueur", goals, matchId: match.id });
+    }
+  }
+  return aggregateTopScorers(entries);
+}
+
 // --- Écriture --------------------------------------------------------------
 
 export function upsertParticipation(matchId: string, participation: Participation): void {
@@ -147,6 +187,13 @@ export function setResult(matchId: string, result: GenerationResult | null): voi
 
 export function setScore(matchId: string, score: MatchScore): void {
   commit({ ...state, scoreByMatch: { ...state.scoreByMatch, [matchId]: score } });
+}
+
+/** Remplace les buteurs du match (miroir de `repo.saveGoals` : on n'ajoute pas). */
+export function setGoals(matchId: string, goals: PlayerGoals[]): void {
+  const forMatch: Record<string, number> = {};
+  for (const g of goals) if (g.goals > 0) forMatch[g.userId] = g.goals;
+  commit({ ...state, goalsByMatch: { ...state.goalsByMatch, [matchId]: forMatch } });
 }
 
 export function setStatus(matchId: string, status: MatchStatus): void {

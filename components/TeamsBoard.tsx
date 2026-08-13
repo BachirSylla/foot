@@ -14,14 +14,28 @@ function sortByPos(team: Team) {
   );
 }
 
+/** Badge buteur : ⚽ pour un but, ⚽×N au-delà. */
+function GoalBadge({ count }: { count: number }) {
+  return (
+    <span
+      className="shrink-0 rounded-md bg-lime/10 px-1.5 py-0.5 text-[10px] font-bold text-lime"
+      title={`${count} but${count > 1 ? "s" : ""} marqué${count > 1 ? "s" : ""}`}
+    >
+      ⚽{count > 1 ? `×${count}` : ""}
+    </span>
+  );
+}
+
 function TeamColumn({
   team,
   side,
   animate,
+  goals,
 }: {
   team: Team;
   side: "A" | "B";
   animate?: boolean;
+  goals?: Record<string, number>;
 }) {
   const isA = side === "A";
   const accent = isA ? "cyan" : "rose";
@@ -53,28 +67,32 @@ function TeamColumn({
       </div>
 
       <ul className="relative space-y-1.5">
-        {players.map((ap, i) => (
-          <motion.li
-            key={ap.player.id}
-            initial={animate ? { opacity: 0, x: isA ? -14 : 14 } : false}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: animate ? 0.12 * i : 0, type: "spring", stiffness: 260, damping: 22 }}
-            className="flex items-center gap-2.5 rounded-lg border border-line bg-white/[0.02] px-2 py-1.5"
-          >
-            <Avatar name={ap.player.name} size={30} accent={accent as any} />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium" title={ap.player.name}>
-              {ap.player.name.split(" ")[0]}
-            </span>
-            <span
-              className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
-                isA ? "bg-cyan/10 text-cyan" : "bg-rose/10 text-rose"
-              }`}
-              title={POSITION_LABEL[ap.assignedPosition]}
+        {players.map((ap, i) => {
+          const scored = goals?.[ap.player.id] ?? 0;
+          return (
+            <motion.li
+              key={ap.player.id}
+              initial={animate ? { opacity: 0, x: isA ? -14 : 14 } : false}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: animate ? 0.12 * i : 0, type: "spring", stiffness: 260, damping: 22 }}
+              className="flex items-center gap-2.5 rounded-lg border border-line bg-white/[0.02] px-2 py-1.5"
             >
-              {ap.assignedPosition}
-            </span>
-          </motion.li>
-        ))}
+              <Avatar name={ap.player.name} size={30} accent={accent as any} />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium" title={ap.player.name}>
+                {ap.player.name.split(" ")[0]}
+              </span>
+              {scored > 0 && <GoalBadge count={scored} />}
+              <span
+                className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                  isA ? "bg-cyan/10 text-cyan" : "bg-rose/10 text-rose"
+                }`}
+                title={POSITION_LABEL[ap.assignedPosition]}
+              >
+                {ap.assignedPosition}
+              </span>
+            </motion.li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -84,10 +102,13 @@ export function TeamsBoard({
   result,
   locked,
   animate,
+  goals,
 }: {
   result: GenerationResult;
   locked?: boolean;
   animate?: boolean;
+  /** Buteurs du match (`{ [userId]: buts }`) : un badge ⚽ suit le joueur. */
+  goals?: Record<string, number>;
 }) {
   return (
     <section>
@@ -100,8 +121,8 @@ export function TeamsBoard({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <TeamColumn team={result.teamA} side="A" animate={animate} />
-        <TeamColumn team={result.teamB} side="B" animate={animate} />
+        <TeamColumn team={result.teamA} side="A" animate={animate} goals={goals} />
+        <TeamColumn team={result.teamB} side="B" animate={animate} goals={goals} />
       </div>
 
       {result.warnings.length > 0 && !locked && (
@@ -120,7 +141,7 @@ export function TeamsBoard({
 
 /** Vue lecture seule pour les joueurs, une fois la compo publiée. */
 export function PublishedTeams() {
-  const { result, match } = useStore();
+  const { result, match, goals } = useStore();
   if (!result) return null;
   // Match joué : le score est déjà annoncé au-dessus, on n'annonce plus le match.
   const finished = match?.status === "finished";
@@ -132,7 +153,8 @@ export function PublishedTeams() {
           <p className="text-sm text-lime">Les équipes sont tombées ! Bon match vendredi.</p>
         </div>
       )}
-      <TeamsBoard result={result} locked />
+      {/* Les buteurs n'ont de sens qu'une fois le match joué. */}
+      <TeamsBoard result={result} locked goals={finished ? goals : undefined} />
     </div>
   );
 }

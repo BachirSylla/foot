@@ -11,8 +11,10 @@ import type {
   MatchStatus,
   Participation,
   Player,
+  PlayerGoals,
   Position,
   GenerationResult,
+  ScorerRow,
   StandingRow,
   Team,
 } from "./types";
@@ -20,12 +22,14 @@ import type {
   ProfileRow,
   ParticipationRow,
   MatchRow,
+  MatchGoalRow,
   MatchResultRow,
   CompositionRow,
   AssignmentRow,
   StandingsViewRow,
+  TopScorersViewRow,
 } from "./database.types";
-import { sortStandings } from "./standings";
+import { sortScorers, sortStandings } from "./standings";
 
 /**
  * `draft` est le défaut de la colonne en base mais l'app ne le manipule pas :
@@ -355,6 +359,71 @@ export async function fetchResults(
     out[r.match_id] = { scoreA: r.score_a, scoreB: r.score_b };
   }
   return out;
+}
+
+// --- Buteurs (V2) -----------------------------------------------------------
+
+/** Les buts saisis pour ce match, indexés par joueur. */
+export async function fetchGoals(
+  sb: SupabaseClient,
+  matchId: string
+): Promise<Record<string, number>> {
+  const { data, error } = await sb
+    .from("match_goals")
+    .select("user_id, goals")
+    .eq("match_id", matchId);
+  if (error) throw error;
+  const out: Record<string, number> = {};
+  for (const r of data as Pick<MatchGoalRow, "user_id" | "goals">[]) out[r.user_id] = r.goals;
+  return out;
+}
+
+/**
+ * Remplace les buteurs du match. On efface puis on réinsère : c'est la seule
+ * façon simple de faire disparaître un joueur retiré de la liste (un upsert
+ * laisserait sa ligne). Les entrées à 0 ne sont pas stockées — la vue
+ * `top_scorers` les ignore de toute façon.
+ */
+export async function saveGoals(
+  sb: SupabaseClient,
+  matchId: string,
+  goals: PlayerGoals[]
+): Promise<void> {
+  const { error: dErr } = await sb.from("match_goals").delete().eq("match_id", matchId);
+  if (dErr) throw dErr;
+  const rows = goals
+    .filter((g) => g.goals > 0)
+    .map((g) => ({ match_id: matchId, user_id: g.userId, goals: g.goals }));
+  if (rows.length === 0) return;
+  const { error } = await sb.from("match_goals").insert(rows);
+  if (error) throw error;
+}
+
+/**
+ * Classement des buteurs. Comme pour le classement principal, l'agrégation est
+ * faite par la vue SQL (`top_scorers`) ; ici on n'accroche que les noms et le
+ * tri (voir `sortScorers`).
+ */
+export async function fetchTopScorers(sb: SupabaseClient): Promise<ScorerRow[]> {
+  const { data, error } = await sb.from("top_scorers").select("*");
+  if (error) throw error;
+  const rows = data as TopScorersViewRow[];
+  if (rows.length === 0) return [];
+
+  const { data: profiles, error: pErr } = await sb.from("profiles").select("id, full_name");
+  if (pErr) throw pErr;
+  const names: Record<string, string> = {};
+  for (const p of profiles as Pick<ProfileRow, "id" | "full_name">[]) names[p.id] = p.full_name;
+
+  // `sum()` / `count()` reviennent en bigint : Number() par sécurité.
+  return sortScorers(
+    rows.map((r) => ({
+      userId: r.user_id,
+      name: names[r.user_id] ?? "Joueur",
+      goals: Number(r.goals),
+      matches: Number(r.matches),
+    }))
+  );
 }
 
 /**

@@ -9,6 +9,7 @@ import type {
   MatchScore,
   Participation,
   Player,
+  PlayerGoals,
   Position,
 } from "./types";
 import { DEMO_PLAYERS, CURRENT_USER_ID } from "./mock";
@@ -50,6 +51,12 @@ interface Ctx {
   result: GenerationResult | null;
   /** Le score final, une fois le match terminé. Distinct de `result`. */
   score: MatchScore | null;
+  /**
+   * Les buteurs du match : `{ [userId]: buts }`. Enrichissement optionnel du
+   * score — ils ne changent rien aux V/N/D, ils alimentent le classement
+   * séparé des meilleurs buteurs.
+   */
+  goals: Record<string, number>;
   revealing: boolean;
   actions: {
     setMyAvailability: (status: Availability) => void;
@@ -62,8 +69,12 @@ interface Ctx {
     /** Retire la publication mais garde la composition (statut `generated`). */
     unpublish: () => void;
     resetGeneration: () => void;
-    /** Saisit (ou corrige) le score : le match passe en « terminé ». */
-    saveResult: (scoreA: number, scoreB: number) => void;
+    /**
+     * Saisit (ou corrige) le score : le match passe en « terminé ». `goals`
+     * remplace la liste des buteurs ; omis, les buteurs existants sont laissés
+     * tels quels.
+     */
+    saveResult: (scoreA: number, scoreB: number, goals?: PlayerGoals[]) => void;
     /** Ramène un match terminé en « équipes publiées » (le score est conservé). */
     reopenMatch: () => void;
     updateMatch: (patch: MatchPatch) => void;
@@ -74,6 +85,7 @@ interface Ctx {
 const StoreContext = createContext<Ctx | null>(null);
 
 const NO_PARTICIPATIONS: Record<string, Participation> = {};
+const NO_GOALS: Record<string, number> = {};
 
 function computeAvailable(roster: Player[], parts: Record<string, Participation>): Player[] {
   return roster
@@ -120,6 +132,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
   const [liveParticipations, setLiveParticipations] = useState<Record<string, Participation>>({});
   const [liveResult, setLiveResult] = useState<GenerationResult | null>(null);
   const [liveScore, setLiveScore] = useState<MatchScore | null>(null);
+  const [liveGoals, setLiveGoals] = useState<Record<string, number>>(NO_GOALS);
   const [revealing, setRevealing] = useState(false);
 
   // Lecture : le mode démo lit le store en mémoire, le mode live l'état chargé.
@@ -129,6 +142,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
     mode === "demo" ? demo.participationsByMatch[matchId] ?? NO_PARTICIPATIONS : liveParticipations;
   const result = mode === "demo" ? demo.resultByMatch[matchId] ?? null : liveResult;
   const score = mode === "demo" ? demo.scoreByMatch[matchId] ?? null : liveScore;
+  const goals = mode === "demo" ? demo.goalsByMatch[matchId] ?? NO_GOALS : liveGoals;
 
   const currentUser: CurrentUser | null =
     mode === "demo"
@@ -158,10 +172,15 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       const comp = await repo.fetchComposition(sb, m.id, rm);
       setLiveResult(comp?.result ?? null);
       setLiveScore(await repo.fetchResult(sb, m.id));
+      // Les buts restent en base quand le match est rouvert : on les relit
+      // toujours, c'est la vue `top_scorers` qui les écarte du classement tant
+      // que le match n'est pas re-terminé.
+      setLiveGoals(await repo.fetchGoals(sb, m.id));
     } else {
       setLiveParticipations({});
       setLiveResult(null);
       setLiveScore(null);
+      setLiveGoals(NO_GOALS);
     }
   }, [matchId]);
 
@@ -203,6 +222,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       .on("postgres_changes", { event: "*", schema: "public", table: "team_compositions", filter: `match_id=eq.${matchId}` }, () => reloadRef.current())
       .on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` }, () => reloadRef.current())
       .on("postgres_changes", { event: "*", schema: "public", table: "match_results", filter: `match_id=eq.${matchId}` }, () => reloadRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "match_goals", filter: `match_id=eq.${matchId}` }, () => reloadRef.current())
       .subscribe();
     return () => {
       sb.removeChannel(channel);
@@ -318,16 +338,31 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
     applyStatus("open");
   }, [mode, matchId, applyStatus]);
 
+  // `goals` est optionnel : le score seul reste une saisie valide (les buteurs
+  // sont un enrichissement). Fourni, il REMPLACE la liste des buteurs.
   const saveResult = useCallback(
-    (scoreA: number, scoreB: number) => {
+    (scoreA: number, scoreB: number, goals?: PlayerGoals[]) => {
+      const nextGoals: Record<string, number> = {};
+      for (const g of goals ?? []) if (g.goals > 0) nextGoals[g.userId] = g.goals;
+
       if (mode === "demo") {
         demoStore.setScore(matchId, { scoreA, scoreB });
         demoStore.setStatus(matchId, "finished");
+        if (goals) demoStore.setGoals(matchId, goals);
       } else {
         setLiveScore({ scoreA, scoreB });
         setLiveMatch((m) => (m ? { ...m, status: "finished" } : m));
+        if (goals) setLiveGoals(nextGoals);
         const sb = getSupabase();
-        if (sb) repo.saveResult(sb, matchId, scoreA, scoreB).catch(console.error);
+        if (sb) {
+          // Le score d'abord (c'est lui qui termine le match), les buteurs
+          // ensuite : si l'insert des buts échoue, le résultat est quand même
+          // enregistré.
+          repo
+            .saveResult(sb, matchId, scoreA, scoreB)
+            .then(() => (goals ? repo.saveGoals(sb, matchId, goals) : undefined))
+            .catch(console.error);
+        }
       }
     },
     [mode, matchId]
@@ -387,6 +422,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       counts: { available: a, maybe: mb, unavailable: u },
       result,
       score,
+      goals,
       revealing,
       actions: {
         setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
@@ -394,7 +430,7 @@ export function StoreProvider({ matchId, children }: { matchId: string; children
       },
     };
   }, [
-    ready, mode, currentUser, isAdmin, role, match, roster, participations, result, score, revealing,
+    ready, mode, currentUser, isAdmin, role, match, roster, participations, result, score, goals, revealing,
     setMyAvailability, setMyPositions, removeParticipation, generate, endReveal,
     publish, unpublish, resetGeneration, saveResult, reopenMatch, updateMatch, cancelMatch,
   ]);

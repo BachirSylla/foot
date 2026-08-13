@@ -13,7 +13,7 @@ import { Scoreboard } from "./Scoreboard";
 import { Avatar, PositionBadge } from "./ui";
 
 export function AdminView() {
-  const { match, mode, result, availablePlayers, actions } = useStore();
+  const { match, mode, result, goals, availablePlayers, actions } = useStore();
   const confirm = useConfirm();
   const [genMode, setGenMode] = useState<GenMode>("balanced");
 
@@ -76,7 +76,7 @@ export function AdminView() {
         <>
           {finished && <Scoreboard />}
 
-          <TeamsBoard result={result} locked={published || finished} />
+          <TeamsBoard result={result} locked={published || finished} goals={finished ? goals : undefined} />
 
           {!published && !finished && (
             <div className="grid grid-cols-2 gap-3">

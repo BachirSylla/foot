@@ -118,6 +118,16 @@ create table match_results (
   recorded_at   timestamptz not null default now()
 );
 
+-- Buteurs d'un match : une ligne par (match, joueur). Saisie OPTIONNELLE, et la
+-- somme des buts n'est pas forcée d'égaler le score (csc, oublis…) : c'est
+-- `match_results` qui reste la source de vérité des victoires/nuls/défaites.
+create table match_goals (
+  match_id      uuid not null references matches (id) on delete cascade,
+  user_id       uuid not null references profiles (id) on delete cascade,
+  goals         int not null default 0 check (goals >= 0),
+  primary key (match_id, user_id)
+);
+
 -- ===========================================================================
 -- Helper : l'utilisateur courant est-il admin ?
 -- ===========================================================================
@@ -143,6 +153,7 @@ alter table team_compositions enable row level security;
 alter table team_assignments  enable row level security;
 alter table pair_history      enable row level security;
 alter table match_results     enable row level security;
+alter table match_goals       enable row level security;
 
 -- profiles : lecture ouverte à TOUT utilisateur connecté (y compris les comptes
 -- anonymes). Indispensable pour que l'app fonctionne : sans ça un joueur ne voit
@@ -213,6 +224,12 @@ create policy "results: read" on match_results
 create policy "results: admin write" on match_results
   for all using (is_admin()) with check (is_admin());
 
+-- buteurs : affichés à tout le monde, saisis par l'organisateur seul.
+create policy "match_goals: read" on match_goals
+  for select using (auth.uid() is not null);
+create policy "match_goals: admin write" on match_goals
+  for all using (is_admin()) with check (is_admin());
+
 -- ===========================================================================
 -- Auto-création du profil à l'inscription (trigger sur auth.users)
 --
@@ -270,6 +287,27 @@ group by a.user_id;
 grant select on player_standings to authenticated, anon;
 
 -- ===========================================================================
+-- Classement des buteurs (V2) : total de buts sur les matchs TERMINÉS.
+--
+-- Volontairement SÉPARÉ de `player_standings` : les buts n'entrent pas dans les
+-- points. Même règle de statut que le classement principal — un match rouvert
+-- sort du classement tant qu'il n'est pas re-terminé, ses buts restant stockés.
+--
+-- Comme `player_standings`, la vue reste en `security_definer` (agrégats only).
+-- ===========================================================================
+create or replace view top_scorers as
+select
+  g.user_id,
+  sum(g.goals)               as goals,
+  count(distinct g.match_id) as matches
+from match_goals g
+join matches m on m.id = g.match_id and m.status = 'finished'
+where g.goals > 0
+group by g.user_id;
+
+grant select on top_scorers to authenticated, anon;
+
+-- ===========================================================================
 -- Temps réel : publier les tables suivies par l'app (dispo, compositions, score).
 -- Sans ça, les souscriptions realtime côté client ne reçoivent rien.
 -- ===========================================================================
@@ -278,3 +316,4 @@ alter publication supabase_realtime add table team_compositions;
 alter publication supabase_realtime add table team_assignments;
 alter publication supabase_realtime add table matches;
 alter publication supabase_realtime add table match_results;
+alter publication supabase_realtime add table match_goals;

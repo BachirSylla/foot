@@ -101,6 +101,21 @@ export interface MatchScore {
   scoreB: number;
 }
 
+/** Les buts d'un joueur sur UN match (saisie optionnelle par l'organisateur). */
+export interface PlayerGoals {
+  userId: string;
+  goals: number;
+}
+
+/** Une ligne du classement des buteurs (agrégé sur les matchs terminés). */
+export interface ScorerRow {
+  userId: string;
+  name: string;
+  goals: number;
+  /** Nombre de matchs où il a marqué au moins un but. */
+  matches: number;
+}
+
 /** Une ligne du classement interne. */
 export interface StandingRow {
   userId: string;

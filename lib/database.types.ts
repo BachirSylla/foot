@@ -60,6 +60,12 @@ export interface MatchResultRow {
   recorded_at: string;
 }
 
+export interface MatchGoalRow {
+  match_id: string;
+  user_id: string;
+  goals: number;
+}
+
 /** Vue `player_standings` (agrégat, pas une table). */
 export interface StandingsViewRow {
   user_id: string;
@@ -68,6 +74,13 @@ export interface StandingsViewRow {
   draws: number;
   losses: number;
   points: number;
+}
+
+/** Vue `top_scorers` (agrégat). `sum()` peut revenir en texte selon le driver. */
+export interface TopScorersViewRow {
+  user_id: string;
+  goals: number;
+  matches: number;
 }
 
 export interface AssignmentRow {

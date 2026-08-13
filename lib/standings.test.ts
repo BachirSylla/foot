@@ -2,7 +2,14 @@
 // Ces règles sont dupliquées dans la vue SQL `player_standings` : ces tests
 // documentent le barème et le départage attendus des deux côtés.
 import { test, expect } from "vitest";
-import { buildStandings, POINTS, sortStandings, type StandingEntry } from "./standings";
+import {
+  aggregateTopScorers,
+  buildStandings,
+  POINTS,
+  sortStandings,
+  type ScorerEntry,
+  type StandingEntry,
+} from "./standings";
 import type { StandingRow } from "./types";
 
 const NAMES = { a: "Ana", b: "Bo", c: "Cyd", d: "Dia" };
@@ -56,4 +63,39 @@ test("un joueur hors roster reste listé sous « Joueur »", () => {
 
 test("sans match terminé, le classement est vide", () => {
   expect(buildStandings([], NAMES)).toEqual([]);
+});
+
+// --- Meilleurs buteurs ------------------------------------------------------
+// Ces règles sont dupliquées dans la vue SQL `top_scorers`.
+
+function goal(matchId: string, userId: keyof typeof NAMES, goals: number): ScorerEntry {
+  return { matchId, userId, name: NAMES[userId], goals };
+}
+
+test("additionne les buts d'un joueur et compte ses matchs", () => {
+  const rows = aggregateTopScorers([
+    goal("m1", "a", 2),
+    goal("m2", "a", 1),
+    goal("m1", "b", 1),
+  ]);
+  expect(rows.map((r) => [r.name, r.goals, r.matches])).toEqual([
+    ["Ana", 3, 2],
+    ["Bo", 1, 1],
+  ]);
+});
+
+test("à buts égaux, le moins de matchs passe devant, puis le nom", () => {
+  const rows = aggregateTopScorers([
+    goal("m1", "a", 2), // Ana : 4 buts en 2 matchs
+    goal("m2", "a", 2),
+    goal("m1", "b", 4), // Bo : 4 buts en 1 match
+    goal("m1", "c", 4), // Cyd : 4 buts en 1 match aussi -> départage par le nom
+  ]);
+  expect(rows.map((r) => r.userId)).toEqual(["b", "c", "a"]);
+});
+
+test("les lignes à 0 but ne font pas de buteur", () => {
+  expect(aggregateTopScorers([goal("m1", "a", 0), goal("m1", "b", 0)])).toEqual([]);
+  const rows = aggregateTopScorers([goal("m1", "a", 0), goal("m2", "a", 1)]);
+  expect(rows.map((r) => [r.name, r.goals, r.matches])).toEqual([["Ana", 1, 1]]);
 });
